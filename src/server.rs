@@ -1,6 +1,7 @@
 //! Listens for and manages many client connections - the Rust counterpart
 //! of Cyclone.Unity's `CycloneServer`.
 
+use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
@@ -29,7 +30,7 @@ struct Slot {
     id: ConnectionId,
     connection: CycloneConnection,
 }
-
+type ServerHandler = Box<dyn FnMut(ConnectionId, &[u8])>;
 pub struct CycloneServer {
     incoming_rx: Option<Receiver<TcpStream>>,
     connections: Vec<Slot>,
@@ -38,6 +39,7 @@ pub struct CycloneServer {
     heartbeat_interval: Duration,
     heartbeat_timeout: Duration,
     local_addr: Option<SocketAddr>,
+    handlers: HashMap<u32, Vec<ServerHandler>>,
 }
 
 impl CycloneServer {
@@ -57,6 +59,7 @@ impl CycloneServer {
             heartbeat_interval,
             heartbeat_timeout,
             local_addr: None,
+            handlers: HashMap::new(),
         }
     }
 
@@ -137,6 +140,19 @@ impl CycloneServer {
             }
         }
     }
+    pub fn on<T: 'static>(
+        &mut self,
+        message_id: u32,
+        decode: impl Fn(&[u8]) -> T + 'static,
+        mut handler: impl FnMut(ConnectionId, T) + 'static, // Thêm ConnectionId
+    ) {
+        self.handlers
+            .entry(message_id)
+            .or_default()
+            .push(Box::new(move |conn_id, payload| {
+                handler(conn_id, decode(payload))
+            }));
+    }
 
     /// Accepts any waiting connections, then polls every open one - never
     /// blocks. Call this once a tick/frame.
@@ -169,7 +185,18 @@ impl CycloneServer {
         for slot in &mut self.connections {
             for event in slot.connection.poll() {
                 match event {
+                    // The server already reports a new connection via
+                    // ServerEvent::ClientConnected once accept() picks it
+                    // up; this is the same underlying signal from the
+                    // connection's own channel, just not one the server
+                    // needs a second time.
+                    ConnectionEvent::Connected => {}
                     ConnectionEvent::MessageReceived(message) => {
+                        if let Some(handlers) = self.handlers.get_mut(&message.id) {
+                            for handler in handlers {
+                                handler(slot.id, &message.payload);
+                            }
+                        }
                         events.push(ServerEvent::MessageReceived(slot.id, message));
                     }
                     ConnectionEvent::PongReceived => {

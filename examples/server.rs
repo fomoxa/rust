@@ -11,10 +11,11 @@ include!("shared/cyclone.codec.rs");
 use std::thread;
 use std::time::Duration;
 
-use cyclone_net::{CycloneMessage, CycloneServer, ServerEvent};
+use cyclone_net::{ConnectionId, CycloneMessage, CycloneServer, ServerEvent};
 
 const PORT: u16 = 9321;
 const PLAYER_EDGE: u32 = 1;
+const PLAYER_INPUT: u32 = 2;
 
 fn main() {
     let mut server = CycloneServer::new();
@@ -23,6 +24,23 @@ fn main() {
         .expect("bind 127.0.0.1:9321 - is something else already using this port?");
 
     println!("cyclone-rust server example listening on port {PORT}");
+
+    server.on(
+        PLAYER_INPUT,
+        |payload: &[u8]| {
+            let mut reader = Reader::new(payload);
+            let mut value = PlayerInput { x: 0.0, z: 0.0 };
+            PlayerInputClientCodec::decode(&mut reader, &mut value)
+                .expect("valid PlayerInput frame");
+            value
+        },
+        |id: ConnectionId, input: PlayerInput| {
+            println!(
+                "received PlayerInput {{connection = {:?}, x = {}, z = {} }}",
+                id, input.x, input.z
+            );
+        },
+    );
 
     loop {
         for event in server.poll() {
@@ -43,7 +61,10 @@ fn main() {
                     );
                 }
                 ServerEvent::ClientDisconnected(_) => println!("client disconnected"),
-                ServerEvent::MessageReceived(_, _) | ServerEvent::PongReceived(_) => {}
+                ServerEvent::MessageReceived(id, _) => {
+                    println!("received PlayerInput {{connection = {:?} }}", id);
+                }
+                ServerEvent::PongReceived(_) => {}
             }
         }
         thread::sleep(Duration::from_millis(16));

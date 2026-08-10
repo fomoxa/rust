@@ -11,3 +11,16 @@ pub struct Player {
     #[codec(edge)]
     pub name: String,
 }
+
+#[network]
+#[codec(client)]
+pub struct PlayerInput {
+    #[network(f32)]
+    #[codec(client)]
+    pub x: f32,
+
+    #[network(f32)]
+    #[codec(client)]
+    pub z: f32,
+}
+

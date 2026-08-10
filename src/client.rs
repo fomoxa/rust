@@ -38,11 +38,11 @@ pub enum ClientEvent {
     Disconnected,
 }
 
-type Handler = Box<dyn FnMut(&[u8])>;
+type ClientHandler = Box<dyn FnMut(&[u8])>;
 
 pub struct CycloneClient {
     connection: Option<CycloneConnection>,
-    handlers: HashMap<u32, Vec<Handler>>,
+    handlers: HashMap<u32, Vec<ClientHandler>>,
 }
 
 impl CycloneClient {
@@ -118,16 +118,12 @@ impl CycloneClient {
             return Vec::new();
         };
 
-        let was_connected = connection.is_connected();
         let raw_events = connection.poll();
         let mut events = Vec::new();
 
-        if !was_connected && connection.is_connected() {
-            events.push(ClientEvent::Connected);
-        }
-
         for event in raw_events {
             match event {
+                ConnectionEvent::Connected => events.push(ClientEvent::Connected),
                 ConnectionEvent::MessageReceived(message) => {
                     if let Some(handlers) = self.handlers.get_mut(&message.id) {
                         for handler in handlers {

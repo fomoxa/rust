@@ -9,10 +9,11 @@ include!("shared/cyclone.codec.rs");
 use std::thread;
 use std::time::Duration;
 
-use cyclone_net::{ClientEvent, CycloneClient};
+use cyclone_net::{ClientEvent, CycloneClient, CycloneMessage};
 
 const PORT: u16 = 9321;
 const PLAYER_EDGE: u32 = 1;
+const PLAYER_INPUT: u32 = 2;
 
 // The one-line adapter CycloneClient::on() needs: the project's own
 // generated Reader is bridged from &[u8] -> Player here, the same seam
@@ -42,6 +43,8 @@ fn main() {
         },
     );
 
+
+
     println!("cyclone-rust client example connecting to 127.0.0.1:{PORT}");
     client
         .connect(("127.0.0.1", PORT), Duration::from_secs(5), Duration::from_secs(15))
@@ -55,6 +58,14 @@ fn main() {
                     if !reported_connected {
                         reported_connected = true;
                         println!("connected to server");
+
+                        let outgoing = PlayerInput { x: 42.0, z: 3.14 };
+                        let mut writer = Writer::new();
+                        PlayerInputClientCodec::encode(&mut writer, &outgoing);
+
+                        println!("[Client] Sending PlayerInput to server: x=42.0, z=3.14");
+                        let _ = client
+                            .send(&CycloneMessage::new(PLAYER_INPUT, writer.into_bytes()));
                     }
                 }
                 ClientEvent::Disconnected => {
@@ -64,6 +75,7 @@ fn main() {
                 ClientEvent::MessageReceived(_) | ClientEvent::PongReceived => {}
             }
         }
+
         thread::sleep(Duration::from_millis(16));
     }
 }

@@ -32,6 +32,9 @@ use crate::protocol::{self, system_message, CycloneMessage};
 /// `Disconnected` events.
 #[derive(Debug)]
 pub enum ConnectionEvent {
+    /// The connection is up and its background reader thread is running.
+    /// Always the first event [`CycloneConnection::poll`] ever returns.
+    Connected,
     MessageReceived(CycloneMessage),
     PingReceived,
     PongReceived,
@@ -43,6 +46,7 @@ pub enum ConnectionEvent {
 /// What the background reader thread hands to [`CycloneConnection::poll`],
 /// before Ping/Pong have been intercepted.
 enum RawEvent {
+    Connected,
     Message(CycloneMessage),
     Ping,
     Pong,
@@ -68,6 +72,12 @@ impl CycloneConnection {
         let read_stream = stream.try_clone()?;
         let connected = Arc::new(AtomicBool::new(true));
         let (tx, rx) = mpsc::channel();
+
+        // Queued before the reader thread starts, so it is always the first
+        // event `poll` drains - no separate "have we reported this yet"
+        // flag needed on either end, the same one-shot guarantee the
+        // channel already gives `RawEvent::Disconnected`.
+        let _ = tx.send(RawEvent::Connected);
 
         let reader_connected = Arc::clone(&connected);
         thread::spawn(move || reader_loop(read_stream, tx, reader_connected));
@@ -107,6 +117,9 @@ impl CycloneConnection {
 
         loop {
             match self.events_rx.try_recv() {
+                Ok(RawEvent::Connected) => {
+                    events.push(ConnectionEvent::Connected);
+                }
                 Ok(RawEvent::Message(message)) => {
                     events.push(ConnectionEvent::MessageReceived(message));
                 }
