@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "generator": "cyclonec 0.2.0",
+  "schema_fingerprint": "sha256:bd60379718901aa552221e98151e823e4bc89f18db549e869d79efcc065bab34",
+  "sha256_of": "each file with its `// generated-at:` line emptied, so an unchanged schema keeps an unchanged digest",
+  "sources": {
+    "src/models/game.rs": {
+      "models": [
+        "GameMessage",
+        "PlayerInput",
+        "Vector3"
+      ],
+      "outputs": [
+        {
+          "path": "src/generated/game_message_state.rs",
+          "model": "GameMessage",
+          "codec": "state",
+          "fingerprint": "sha256:d0b26077fe6f6fd0cf8a587eb4c906cd1544c18767d9cd5cfeb485833132a12f",
+          "sha256": "14bc63d23ad56671b6e62d3e350f17f7755f3e2cdfc2e86994742addf36f0997"
+        },
+        {
+          "path": "src/generated/player_input_input.rs",
+          "model": "PlayerInput",
+          "codec": "input",
+          "fingerprint": "sha256:9b57ff586837d6541abe689c04bce84075d2e2d29b10113c8376b1db5e82fb25",
+          "sha256": "f01fe5f449e0e42196ff7e2e65c3a22e84159362fb6c1ffe75c992e0cf89edd1"
+        },
+        {
+          "path": "src/generated/vector3_state.rs",
+          "model": "Vector3",
+          "codec": "state",
+          "fingerprint": "sha256:61a493617c048a9cc659546980235e83abefc13b17d7d00fcf10da8246e9a3dd",
+          "sha256": "d23239210d2e255a9d03d7f59a08ea9d46cc3cd7311b4bec74be2dc2d7259c37"
+        },
+        {
+          "path": "src/generated/vector3_input.rs",
+          "model": "Vector3",
+          "codec": "input",
+          "fingerprint": "sha256:b6f55f6b96e4c39d87c6c1afcc003d4ba19c7ac41a1b44ce31a63235a102edd4",
+          "sha256": "ae98dcab2203d97e20e346aa47e3fab15f3715c7d437a01e6892e4211e1b56d0"
+        }
+      ]
+    }
+  },
+  "shared": [
+    {
+      "path": "src/generated/runtime.rs",
+      "kind": "runtime",
+      "sha256": "e1965ba97600585343bfa3278430e4222999747ee9705ed6e9cb10bcb0a9871f"
+    },
+    {
+      "path": "src/generated/handshake.rs",
+      "kind": "handshake",
+      "sha256": "60ec1d875b31976916d21957f4ae5b95ee422a8c3409203e2cc9a833ded2b053"
+    },
+    {
+      "path": "src/generated/mod.rs",
+      "kind": "root",
+      "sha256": "e18aac16ac448eaa4e575f5d279d0779ab092e605bd0b70a3b1425aae2109e7c"
+    }
+  ]
+}

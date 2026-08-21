@@ -1,248 +1,485 @@
-//! Wraps one `TcpStream`, doing frame buffering and heartbeat on it - used
-//! by both [`crate::client::CycloneClient`] (one connection) and
-//! [`crate::server::CycloneServer`] (one per accepted peer), the same split
-//! Cyclone.Unity's `CycloneConnection` has and for the same reason: client
-//! and server share everything past "how the socket was obtained".
-//!
-//! # A background thread, not async
-//!
-//! This crate has no async runtime dependency (see the crate root docs for
-//! why), so a blocking `TcpStream::read` cannot simply be awaited between
-//! [`CycloneConnection::poll`] calls the way Cyclone.Unity's C# or
-//! cyclone-godot's poll-based sockets can. Instead, [`CycloneConnection::new`]
-//! spawns one background thread that blocks on reads and pushes decoded
-//! events through an [`mpsc`] channel; [`poll`](CycloneConnection::poll)
-//! only ever drains that channel and ticks the heartbeat, so it never
-//! blocks and is safe to call from a single-threaded game loop the same way
-//! Cyclone.Unity's `Pump()` and cyclone-godot's `poll()` are.
-
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::fmt;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+use std::time::Instant;
 
-use crate::heartbeat::CycloneHeartbeat;
-use crate::protocol::{self, system_message, CycloneMessage};
+use crate::event::{Disconnect, Event, EventSink, Events, PeerId};
+use crate::frame::{self, StreamDecoder};
+use crate::schema::Schema;
+use crate::session::{Config, Out, Reaction, Role, Session, SessionState};
+use crate::transport::{RecvOutcome, SendOutcome, Transport, TransportKind};
 
-/// What [`CycloneConnection::poll`] hands back - the Rust counterpart of
-/// Cyclone.Unity's `MessageReceived`/`PingReceived`/`PongReceived`/
-/// `Disconnected` events.
-#[derive(Debug)]
-pub enum ConnectionEvent {
-    /// The connection is up and its background reader thread is running.
-    /// Always the first event [`CycloneConnection::poll`] ever returns.
-    Connected,
-    MessageReceived(CycloneMessage),
-    PingReceived,
-    PongReceived,
-    /// The peer disconnected, the socket errored, or
-    /// [`CycloneConnection::disconnect`] was called. Fires at most once.
-    Disconnected,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendError {
+    NotReady,
+    Congested,
+    TooLarge,
+    Closed,
 }
 
-/// What the background reader thread hands to [`CycloneConnection::poll`],
-/// before Ping/Pong have been intercepted.
-enum RawEvent {
-    Connected,
-    Message(CycloneMessage),
-    Ping,
-    Pong,
-    Disconnected,
-}
-
-pub struct CycloneConnection {
-    write_stream: TcpStream,
-    heartbeat: CycloneHeartbeat,
-    events_rx: Receiver<RawEvent>,
-    connected: Arc<AtomicBool>,
-    disconnected_reported: bool,
-}
-
-impl CycloneConnection {
-    /// Takes ownership of an already-connected `stream` and starts its
-    /// background reader thread.
-    pub fn new(
-        stream: TcpStream,
-        heartbeat_interval: Duration,
-        heartbeat_timeout: Duration,
-    ) -> std::io::Result<Self> {
-        let read_stream = stream.try_clone()?;
-        let connected = Arc::new(AtomicBool::new(true));
-        let (tx, rx) = mpsc::channel();
-
-        // Queued before the reader thread starts, so it is always the first
-        // event `poll` drains - no separate "have we reported this yet"
-        // flag needed on either end, the same one-shot guarantee the
-        // channel already gives `RawEvent::Disconnected`.
-        let _ = tx.send(RawEvent::Connected);
-
-        let reader_connected = Arc::clone(&connected);
-        thread::spawn(move || reader_loop(read_stream, tx, reader_connected));
-
-        Ok(Self {
-            write_stream: stream,
-            heartbeat: CycloneHeartbeat::new(heartbeat_interval, heartbeat_timeout),
-            events_rx: rx,
-            connected,
-            disconnected_reported: false,
-        })
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::SeqCst)
-    }
-
-    /// Sends `message` immediately - not queued, not batched. Blocks only
-    /// on the local socket buffer filling up, the same as any other
-    /// blocking `write`.
-    pub fn send(&mut self, message: &CycloneMessage) -> std::io::Result<()> {
-        let frame = protocol::encode(message);
-        self.write_stream.write_all(&frame)
-    }
-
-    pub fn disconnect(&mut self) {
-        self.connected.store(false, Ordering::SeqCst);
-        let _ = self.write_stream.shutdown(std::net::Shutdown::Both);
-    }
-
-    /// Drains whatever the background reader thread has queued since the
-    /// last call, replies to any Ping with a Pong, and ticks the heartbeat.
-    /// Never blocks. Call this once a tick/frame - see this module's own
-    /// docs for why nothing here needs the caller to be async.
-    pub fn poll(&mut self) -> Vec<ConnectionEvent> {
-        let mut events = Vec::new();
-
-        loop {
-            match self.events_rx.try_recv() {
-                Ok(RawEvent::Connected) => {
-                    events.push(ConnectionEvent::Connected);
-                }
-                Ok(RawEvent::Message(message)) => {
-                    events.push(ConnectionEvent::MessageReceived(message));
-                }
-                Ok(RawEvent::Ping) => {
-                    events.push(ConnectionEvent::PingReceived);
-                    let _ = self.send(&CycloneMessage::new(system_message::PONG, Vec::new()));
-                }
-                Ok(RawEvent::Pong) => {
-                    self.heartbeat.mark_pong();
-                    events.push(ConnectionEvent::PongReceived);
-                }
-                Ok(RawEvent::Disconnected) => {
-                    self.connected.store(false, Ordering::SeqCst);
-                    if !self.disconnected_reported {
-                        self.disconnected_reported = true;
-                        events.push(ConnectionEvent::Disconnected);
-                    }
-                    break;
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
-            }
-        }
-
-        if self.is_connected() {
-            if self.heartbeat.is_timeout() {
-                self.disconnect();
-                if !self.disconnected_reported {
-                    self.disconnected_reported = true;
-                    events.push(ConnectionEvent::Disconnected);
-                }
-            } else if self.heartbeat.should_ping() {
-                let _ = self.send(&CycloneMessage::new(system_message::PING, Vec::new()));
-            }
-        }
-
-        events
-    }
-}
-
-/// Runs on its own thread for the lifetime of one connection: blocks on
-/// reads, extracts frames from the accumulated buffer (resyncing on the
-/// magic bytes the same way Cyclone.Unity's `ProcessReceiveBufferAsync` and
-/// cyclone-godot's `_process_receive_buffer` do), and forwards decoded
-/// messages - never touching anything the caller's own thread owns except
-/// through `tx` and `connected`.
-fn reader_loop(mut stream: TcpStream, tx: Sender<RawEvent>, connected: Arc<AtomicBool>) {
-    let mut buffer: Vec<u8> = Vec::new();
-    let mut read_buf = [0u8; 64 * 1024];
-
-    'read: loop {
-        let read = match stream.read(&mut read_buf) {
-            Ok(0) => break, // peer closed cleanly
-            Ok(n) => n,
-            Err(_) => break, // reset, timeout, or anything else: treat as disconnected
+impl fmt::Display for SendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            SendError::NotReady => "the handshake has not been accepted yet",
+            SendError::Congested => "a frame is still waiting to go out",
+            SendError::TooLarge => "the transport cannot carry a frame this large",
+            SendError::Closed => "the session is closed",
         };
-        buffer.extend_from_slice(&read_buf[..read]);
+        f.write_str(text)
+    }
+}
 
+impl std::error::Error for SendError {}
+
+#[derive(Debug)]
+struct Outbox {
+    bytes: Vec<u8>,
+    offset: usize,
+}
+
+#[derive(Debug)]
+struct Wire<T: Transport> {
+    transport: T,
+    outbox: Option<Outbox>,
+    dead: Option<Disconnect>,
+    released: bool,
+}
+
+impl<T: Transport> Wire<T> {
+    fn new(transport: T) -> Wire<T> {
+        Wire { transport, outbox: None, dead: None, released: false }
+    }
+
+    fn is_dead(&self) -> bool {
+        self.dead.is_some()
+    }
+
+    fn is_congested(&self) -> bool {
+        self.outbox.is_some()
+    }
+
+    fn kill(&mut self, reason: Disconnect) {
+        if self.dead.is_none() {
+            self.dead = Some(reason);
+        }
+    }
+
+    fn shutdown(&mut self) {
+        if self.dead.is_none() {
+            self.dead = Some(Disconnect::Local);
+        }
+        self.outbox = None;
+        self.transport.close_soft();
+    }
+
+    fn release(&mut self) {
+        if !self.released {
+            self.released = true;
+            self.transport.close_hard();
+        }
+    }
+
+    fn recv(&mut self, buffer: &mut [u8]) -> RecvOutcome {
+        self.transport.recv(buffer)
+    }
+
+    fn flush(&mut self) {
+        let Wire { transport, outbox, dead, .. } = self;
         loop {
-            if buffer.len() < protocol::HEADER_SIZE {
-                break;
+            let Some(pending) = outbox.as_mut() else { return };
+            if pending.offset >= pending.bytes.len() {
+                *outbox = None;
+                return;
             }
-
-            let magic_index = find_magic(&buffer);
-            let Some(magic_index) = magic_index else {
-                keep_possible_magic_prefix(&mut buffer);
-                break;
-            };
-            if magic_index > 0 {
-                buffer.drain(0..magic_index);
-            }
-            if buffer.len() < protocol::HEADER_SIZE {
-                break;
-            }
-
-            let payload_length = u32::from_le_bytes(
-                buffer[protocol::MAGIC_SIZE + protocol::MESSAGE_ID_SIZE..protocol::HEADER_SIZE]
-                    .try_into()
-                    .unwrap(),
-            ) as usize;
-
-            if payload_length > protocol::MAX_PAYLOAD_LENGTH {
-                break 'read; // peer violated the size limit: drop the connection
-            }
-
-            let frame_length = protocol::HEADER_SIZE + payload_length;
-            if buffer.len() < frame_length {
-                break; // not a full frame yet
-            }
-
-            let frame: Vec<u8> = buffer.drain(0..frame_length).collect();
-            let Some(message) = protocol::try_decode(&frame) else {
-                break 'read; // internally inconsistent: cannot happen from the checks above, but never guess
-            };
-
-            let event = match message.id {
-                system_message::PING => RawEvent::Ping,
-                system_message::PONG => RawEvent::Pong,
-                _ => RawEvent::Message(message),
-            };
-            if tx.send(event).is_err() {
-                return; // the CycloneConnection was dropped; nothing left to report to
+            match transport.send(&pending.bytes[pending.offset..]) {
+                SendOutcome::Sent => {
+                    *outbox = None;
+                    return;
+                }
+                SendOutcome::Partial(0) | SendOutcome::WouldBlock => return,
+                SendOutcome::Partial(count) => pending.offset += count,
+                SendOutcome::TooLarge => {
+                    *outbox = None;
+                    return;
+                }
+                SendOutcome::Closed => {
+                    if dead.is_none() {
+                        *dead = Some(Disconnect::PeerClosed);
+                    }
+                    return;
+                }
+                SendOutcome::Error(_) => {
+                    if dead.is_none() {
+                        *dead = Some(Disconnect::TransportError);
+                    }
+                    return;
+                }
             }
         }
     }
 
-    connected.store(false, Ordering::SeqCst);
-    let _ = tx.send(RawEvent::Disconnected);
-}
-
-fn find_magic(buffer: &[u8]) -> Option<usize> {
-    if buffer.len() < 2 {
-        return None;
+    fn write(&mut self, bytes: &[u8]) -> Result<(), SendError> {
+        match self.transport.send(bytes) {
+            SendOutcome::Sent => Ok(()),
+            SendOutcome::Partial(count) if count < bytes.len() => {
+                self.outbox = Some(Outbox { bytes: bytes[count..].to_vec(), offset: 0 });
+                Ok(())
+            }
+            SendOutcome::Partial(_) => Ok(()),
+            SendOutcome::WouldBlock => {
+                self.outbox = Some(Outbox { bytes: bytes.to_vec(), offset: 0 });
+                Ok(())
+            }
+            SendOutcome::TooLarge => Err(SendError::TooLarge),
+            SendOutcome::Closed => {
+                self.kill(Disconnect::PeerClosed);
+                Err(SendError::Closed)
+            }
+            SendOutcome::Error(_) => {
+                self.kill(Disconnect::TransportError);
+                Err(SendError::Closed)
+            }
+        }
     }
-    buffer
-        .windows(2)
-        .position(|window| window == protocol::MAGIC)
+
+    fn send_message(&mut self, bytes: &[u8]) -> Result<(), SendError> {
+        if self.is_dead() {
+            return Err(SendError::Closed);
+        }
+        if self.is_congested() {
+            return Err(SendError::Congested);
+        }
+        self.write(bytes)
+    }
+
+    fn send_control(&mut self, bytes: &[u8]) {
+        if self.is_dead() {
+            return;
+        }
+        if let Some(pending) = self.outbox.as_mut() {
+            pending.bytes.extend_from_slice(bytes);
+            return;
+        }
+        let _ = self.write(bytes);
+    }
 }
 
-fn keep_possible_magic_prefix(buffer: &mut Vec<u8>) {
-    let last = buffer.last().copied();
-    buffer.clear();
-    if last == Some(protocol::MAGIC[0]) {
-        buffer.push(protocol::MAGIC[0]);
+#[derive(Debug)]
+enum Intake {
+    Stream(StreamDecoder),
+    Message,
+}
+
+enum Pump {
+    Idle,
+    Fed,
+    Handled { out: Option<Out>, failed: bool },
+}
+
+#[derive(Debug)]
+pub(crate) struct Core<T: Transport> {
+    wire: Wire<T>,
+    intake: Intake,
+    session: Session,
+    recv_buf: Vec<u8>,
+    scratch: Vec<u8>,
+    announced: bool,
+}
+
+impl<T: Transport> Core<T> {
+    pub(crate) fn new(
+        transport: T,
+        schema: Arc<Schema>,
+        config: Config,
+        role: Role,
+        now: Instant,
+    ) -> Core<T> {
+        let intake = match transport.kind() {
+            TransportKind::Stream => Intake::Stream(StreamDecoder::new()),
+            TransportKind::Message => Intake::Message,
+        };
+        let (session, opening) = Session::new(role, schema, config, now);
+        let mut core = Core {
+            wire: Wire::new(transport),
+            intake,
+            session,
+            recv_buf: vec![0; config.recv_buffer_size.max(frame::DATA_HEADER_LEN)],
+            scratch: Vec::new(),
+            announced: false,
+        };
+        if let Some(out) = opening {
+            core.emit(&out);
+        }
+        core
+    }
+
+    pub(crate) fn session(&self) -> &Session {
+        &self.session
+    }
+
+    pub(crate) fn transport(&self) -> &T {
+        &self.wire.transport
+    }
+
+    pub(crate) fn transport_mut(&mut self) -> &mut T {
+        &mut self.wire.transport
+    }
+
+    pub(crate) fn is_congested(&self) -> bool {
+        self.wire.is_congested()
+    }
+
+    pub(crate) fn is_finished(&self) -> bool {
+        self.session.is_closed() && self.wire.is_dead()
+    }
+
+    pub(crate) fn close(&mut self) {
+        self.session.close();
+        self.wire.shutdown();
+    }
+
+    pub(crate) fn send(&mut self, message_id: u32, payload: &[u8]) -> Result<(), SendError> {
+        if !self.session.is_ready() {
+            return Err(SendError::NotReady);
+        }
+        self.scratch.clear();
+        frame::encode_data(message_id, payload, &mut self.scratch)
+            .map_err(|_| SendError::TooLarge)?;
+        self.wire.send_message(&self.scratch)
+    }
+
+    pub(crate) fn tick(&mut self, now: Instant, peer: PeerId, sink: &mut EventSink) {
+        if !self.announced {
+            self.announced = true;
+            sink.push(peer, Event::Connected);
+        }
+
+        if !self.wire.is_dead() {
+            self.wire.flush();
+        }
+        if !self.wire.is_dead() {
+            self.drain(now, peer, sink);
+        }
+        if !self.wire.is_dead() {
+            let reaction = self.session.tick(now);
+            self.apply(reaction, peer, sink);
+        }
+        if let Some(reason) = self.wire.dead {
+            if self.session.state() != SessionState::Closed {
+                let reaction = self.session.on_transport_closed(reason);
+                self.apply(reaction, peer, sink);
+            }
+        }
+    }
+
+    fn apply(&mut self, reaction: Reaction<'_>, peer: PeerId, sink: &mut EventSink) {
+        if let Some(out) = reaction.out {
+            self.emit(&out);
+        }
+        if let Some(event) = reaction.event {
+            sink.push(peer, event);
+            if matches!(event, Event::HandshakeFailed(_)) {
+                self.wire.shutdown();
+            }
+        }
+    }
+
+    fn emit(&mut self, out: &Out) {
+        self.scratch.clear();
+        match out {
+            Out::Probe => frame::encode_probe(&mut self.scratch),
+            Out::Ack => frame::encode_ack(&mut self.scratch),
+            Out::Handshake(payload) => {
+                if frame::encode_handshake(payload, &mut self.scratch).is_err() {
+                    return;
+                }
+            }
+        }
+        self.wire.send_control(&self.scratch);
+    }
+
+    fn drain(&mut self, now: Instant, peer: PeerId, sink: &mut EventSink) {
+        let mut frames = self.session.config().max_frames_per_tick;
+        let mut reads = frames;
+        while frames > 0 && reads > 0 && !self.wire.is_dead() {
+            let pump = {
+                let Core { wire, intake, session, recv_buf, .. } = self;
+                match intake {
+                    Intake::Stream(decoder) => {
+                        pump_stream(wire, decoder, session, recv_buf, sink, peer, now)
+                    }
+                    Intake::Message => pump_message(wire, session, recv_buf, sink, peer, now),
+                }
+            };
+            match pump {
+                Pump::Idle => break,
+                Pump::Fed => reads -= 1,
+                Pump::Handled { out, failed } => {
+                    if let Some(out) = out {
+                        self.emit(&out);
+                    }
+                    if failed {
+                        self.wire.shutdown();
+                    }
+                    frames -= 1;
+                }
+            }
+        }
+    }
+}
+
+impl<T: Transport> Drop for Core<T> {
+    fn drop(&mut self) {
+        self.wire.release();
+    }
+}
+
+fn pump_stream<T: Transport>(
+    wire: &mut Wire<T>,
+    decoder: &mut StreamDecoder,
+    session: &mut Session,
+    recv_buf: &mut Vec<u8>,
+    sink: &mut EventSink,
+    peer: PeerId,
+    now: Instant,
+) -> Pump {
+    match decoder.next_len() {
+        Err(_) => {
+            wire.kill(Disconnect::TransportError);
+            return Pump::Idle;
+        }
+        Ok(Some(len)) => {
+            let Ok(frame) = decoder.frame(len) else {
+                wire.kill(Disconnect::TransportError);
+                return Pump::Idle;
+            };
+            let Reaction { out, event } = session.on_frame(frame, now);
+            let mut failed = false;
+            if let Some(event) = event {
+                failed = matches!(event, Event::HandshakeFailed(_));
+                sink.push(peer, event);
+            }
+            decoder.advance(len);
+            return Pump::Handled { out, failed };
+        }
+        Ok(None) => {}
+    }
+
+    match wire.recv(recv_buf) {
+        RecvOutcome::Received(count) => {
+            decoder.feed(&recv_buf[..count]);
+            Pump::Fed
+        }
+        RecvOutcome::WouldBlock => Pump::Idle,
+        RecvOutcome::NeedCapacity(needed) => {
+            recv_buf.resize(needed, 0);
+            Pump::Fed
+        }
+        RecvOutcome::Closed => {
+            wire.kill(Disconnect::PeerClosed);
+            Pump::Idle
+        }
+        RecvOutcome::Error(_) => {
+            wire.kill(Disconnect::TransportError);
+            Pump::Idle
+        }
+    }
+}
+
+fn pump_message<T: Transport>(
+    wire: &mut Wire<T>,
+    session: &mut Session,
+    recv_buf: &mut Vec<u8>,
+    sink: &mut EventSink,
+    peer: PeerId,
+    now: Instant,
+) -> Pump {
+    match wire.recv(recv_buf) {
+        RecvOutcome::Received(count) => {
+            let Ok(frame) = frame::decode_packet(&recv_buf[..count]) else {
+                return Pump::Handled { out: None, failed: false };
+            };
+            let Reaction { out, event } = session.on_frame(frame, now);
+            let mut failed = false;
+            if let Some(event) = event {
+                failed = matches!(event, Event::HandshakeFailed(_));
+                sink.push(peer, event);
+            }
+            Pump::Handled { out, failed }
+        }
+        RecvOutcome::WouldBlock => Pump::Idle,
+        RecvOutcome::NeedCapacity(needed) => {
+            recv_buf.resize(needed, 0);
+            Pump::Fed
+        }
+        RecvOutcome::Closed => {
+            wire.kill(Disconnect::PeerClosed);
+            Pump::Idle
+        }
+        RecvOutcome::Error(_) => {
+            wire.kill(Disconnect::TransportError);
+            Pump::Idle
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Connection<T: Transport> {
+    core: Core<T>,
+    sink: EventSink,
+}
+
+impl<T: Transport> Connection<T> {
+    pub fn new(transport: T, schema: Arc<Schema>, config: Config) -> Connection<T> {
+        Connection::at(transport, schema, config, Instant::now())
+    }
+
+    pub fn at(transport: T, schema: Arc<Schema>, config: Config, now: Instant) -> Connection<T> {
+        Connection {
+            core: Core::new(transport, schema, config, Role::Client, now),
+            sink: EventSink::new(),
+        }
+    }
+
+    pub fn tick(&mut self, now: Instant) -> Events<'_> {
+        let Connection { core, sink } = self;
+        sink.clear();
+        core.tick(now, PeerId::LOCAL, sink);
+        sink.events()
+    }
+
+    pub fn tick_now(&mut self) -> Events<'_> {
+        self.tick(Instant::now())
+    }
+
+    pub fn send(&mut self, message_id: u32, payload: &[u8]) -> Result<(), SendError> {
+        self.core.send(message_id, payload)
+    }
+
+    pub fn state(&self) -> SessionState {
+        self.core.session().state()
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.core.session().is_ready()
+    }
+
+    pub fn is_congested(&self) -> bool {
+        self.core.is_congested()
+    }
+
+    pub fn schema(&self) -> &Schema {
+        self.core.session().schema()
+    }
+
+    pub fn transport(&self) -> &T {
+        self.core.transport()
+    }
+
+    pub fn transport_mut(&mut self) -> &mut T {
+        self.core.transport_mut()
+    }
+
+    pub fn close(&mut self) {
+        self.core.close();
     }
 }

@@ -1,0 +1,7 @@
+# The demo project the examples are built from, laid out the way a real crate is:
+# one annotated model file under src/models/, and the tree cyclonec writes beside
+# it at src/generated/. Regenerate from this directory:
+#
+#     cyclonec generate
+src = "src"
+out = "src/generated"

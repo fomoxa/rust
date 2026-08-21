@@ -1,0 +1,96 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# This repository builds and tests on its own: `std` and nothing else, no
+# dependency to fetch, and nothing outside the checkout. No job here may reach
+# a sibling repository.
+jobs:
+  # The sockets are the one part of this crate a single platform cannot prove.
+  # Non-blocking reads and writes, clean close versus abrupt break, and UDP's
+  # message-size error all differ between Berkeley sockets and Winsock, so the
+  # test suite - which opens real TCP and UDP loopback sockets in tests/interop.rs
+  # - runs on all three rather than being taken on trust.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # --all-targets so the examples are compiled too: they are the only
+      # consumers of the public API that live in this repository.
+      - name: cargo build
+        run: cargo build --all-targets
+
+      # Framing, handshake, heartbeat, runtime, and real-socket interop.
+      - name: cargo test
+        run: cargo test
+
+  lint:
+    name: fmt and clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # rustfmt.toml pins the style, so this is a real gate rather than a
+      # matter of whose editor last touched the file.
+      - name: cargo fmt
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  # Cargo.toml claims rust-version = "1.70". A claim nobody checks is a claim
+  # that quietly stops being true, so it gets its own job. Clippy and rustfmt
+  # deliberately stay on stable: their output moves between releases, and this
+  # job is about the language and the standard library, not about lints.
+  msrv:
+    name: minimum supported rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.70.0
+
+      - name: cargo build
+        run: cargo build --all-targets
+
+      - name: cargo test
+        run: cargo test
+
+  # The examples and tests/demo.rs mount examples/demo/ through `#[path]`, so
+  # files that are not targets of their own still have to end up inside the
+  # published archive. This job packs the crate exactly as `cargo publish` would
+  # and builds what came out, so a missing file fails here instead of on
+  # crates.io.
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo package
+        run: cargo package
+
+      - name: the generated demo tree is in the archive
+        run: |
+          tar tzf target/package/cyclone-net-*.crate | tee /dev/stderr \
+            | grep -q 'examples/demo/src/generated/handshake.rs'
