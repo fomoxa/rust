@@ -30,6 +30,11 @@ impl fmt::Display for SendError {
 
 impl std::error::Error for SendError {}
 
+/// One data frame plus the handful of control frames the protocol can owe at
+/// any moment: one probe per silence window (02 §4.5), one ack per probe, and
+/// at most one query round per session (02 §3.3.2).
+const MAX_OUTBOX_BYTES: usize = 64 * 1024;
+
 #[derive(Debug)]
 struct Outbox {
     bytes: Vec<u8>,
@@ -156,6 +161,18 @@ impl<T: Transport> Wire<T> {
             return;
         }
         if let Some(pending) = self.outbox.as_mut() {
+            // Queue behind what is already waiting, never overwrite it: a
+            // refusal verdict lost that way leaves the peer waiting out its
+            // deadline without ever learning why (02 §8).
+            if pending.bytes.len() - pending.offset + bytes.len() > MAX_OUTBOX_BYTES {
+                // The protocol caps how many control frames can be owed at
+                // once, so passing the ceiling means an assumption broke. The
+                // peer stopped reading, which is the same "not keeping up"
+                // that a heartbeat timeout reports - the transport itself is
+                // fine, so a transport error would be untrue.
+                self.kill(Disconnect::Unresponsive);
+                return;
+            }
             pending.bytes.extend_from_slice(bytes);
             return;
         }

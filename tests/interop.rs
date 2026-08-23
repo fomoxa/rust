@@ -2,13 +2,13 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use cyclone_net::connection::Connection;
-use cyclone_net::event::{Disconnect, Event, PeerId};
-use cyclone_net::handshake::HandshakeFailure;
-use cyclone_net::schema::{MessageSchema, Schema};
-use cyclone_net::server::Server;
-use cyclone_net::session::Config;
-use cyclone_net::transport::{
+use fomoxa_net::connection::Connection;
+use fomoxa_net::event::{Disconnect, Event, PeerId};
+use fomoxa_net::handshake::HandshakeFailure;
+use fomoxa_net::schema::{MessageSchema, Schema};
+use fomoxa_net::server::Server;
+use fomoxa_net::session::Config;
+use fomoxa_net::transport::{
     ServerTransport, TcpListenerTransport, TcpTransport, Transport, UdpServerTransport,
     UdpTransport,
 };

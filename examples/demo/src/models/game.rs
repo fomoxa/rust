@@ -1,4 +1,4 @@
-use cyclone_attributes::*;
+use fomoxa_attributes::*;
 
 #[network]
 #[codec(state, input)]

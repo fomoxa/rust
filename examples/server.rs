@@ -16,10 +16,10 @@ mount_the_generated_tree!();
 use std::thread;
 use std::time::Duration;
 
-use cyclone_net::event::Event;
-use cyclone_net::server::Server;
-use cyclone_net::session::Config;
-use cyclone_net::transport::TcpListenerTransport;
+use fomoxa_net::event::Event;
+use fomoxa_net::server::Server;
+use fomoxa_net::session::Config;
+use fomoxa_net::transport::TcpListenerTransport;
 
 use generated::{
     GameMessageStateCodec, PlayerInputInputCodec, Reader, Writer, GAME_MESSAGE_STATE_MESSAGE_ID,
@@ -48,7 +48,7 @@ fn step(state: &mut GameMessage, input: &PlayerInput) {
 fn main() {
     let listener = TcpListenerTransport::bind(ADDRESS).expect("bind 127.0.0.1:9321");
     let mut server = Server::new(listener, schema::schema(), Config::default());
-    println!("cyclone-net server listening on {ADDRESS}");
+    println!("fomoxa-net server listening on {ADDRESS}");
 
     let mut state = GameMessage {
         player_id: 1,

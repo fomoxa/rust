@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cyclone_net::event::{Disconnect, Event};
-use cyclone_net::frame::Frame;
-use cyclone_net::schema::{MessageSchema, Schema};
-use cyclone_net::session::{Config, Out, Role, Session, SessionState};
+use fomoxa_net::event::{Disconnect, Event};
+use fomoxa_net::frame::Frame;
+use fomoxa_net::schema::{MessageSchema, Schema};
+use fomoxa_net::session::{Config, Out, Role, Session, SessionState};
 
 fn schema() -> Arc<Schema> {
     Arc::new(Schema::new(0x1234, vec![MessageSchema::new(1, 10, vec![10])]).unwrap())
@@ -19,7 +19,7 @@ fn ready_client(now: Instant) -> Session {
 
 fn ready_server(now: Instant) -> Session {
     let (mut session, _) = Session::new(Role::Server, schema(), Config::default(), now);
-    let hello = cyclone_net::handshake::encode_hello(&schema());
+    let hello = fomoxa_net::handshake::encode_hello(&schema());
     let reaction = session.on_frame(Frame::Handshake(&hello), now);
     assert_eq!(reaction.event, Some(Event::Ready));
     session

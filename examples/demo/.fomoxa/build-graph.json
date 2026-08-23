@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generator": "cyclonec 0.2.0",
+  "generator": "fomoxac 0.2.0",
   "schema_fingerprint": "sha256:bd60379718901aa552221e98151e823e4bc89f18db549e869d79efcc065bab34",
   "sha256_of": "each file with its `// generated-at:` line emptied, so an unchanged schema keeps an unchanged digest",
   "sources": {

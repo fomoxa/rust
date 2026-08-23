@@ -92,5 +92,5 @@ jobs:
 
       - name: the generated demo tree is in the archive
         run: |
-          tar tzf target/package/cyclone-net-*.crate | tee /dev/stderr \
+          tar tzf target/package/fomoxa-net-*.crate | tee /dev/stderr \
             | grep -q 'examples/demo/src/generated/handshake.rs'

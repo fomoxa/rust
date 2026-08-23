@@ -1,4 +1,4 @@
-use cyclone_net::frame::{
+use fomoxa_net::frame::{
     self, Frame, FrameError, StreamDecoder, MAX_HANDSHAKE_PAYLOAD, MAX_MESSAGE_PAYLOAD,
 };
 

@@ -5,12 +5,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cyclone_net::connection::{Connection, SendError};
-use cyclone_net::event::{Disconnect, Event};
-use cyclone_net::frame;
-use cyclone_net::schema::{MessageSchema, Schema};
-use cyclone_net::session::{Config, SessionState};
-use cyclone_net::transport::{RecvOutcome, SendOutcome, Transport, TransportKind};
+use fomoxa_net::connection::{Connection, SendError};
+use fomoxa_net::event::{Disconnect, Event};
+use fomoxa_net::frame;
+use fomoxa_net::schema::{MessageSchema, Schema};
+use fomoxa_net::session::{Config, SessionState};
+use fomoxa_net::transport::{RecvOutcome, SendOutcome, Transport, TransportKind};
 
 #[derive(Debug)]
 struct State {
@@ -315,7 +315,7 @@ fn a_rejected_handshake_raises_one_terminal_event() {
         events,
         vec![
             Event::Connected,
-            Event::HandshakeFailed(cyclone_net::HandshakeFailure::SchemaConflict)
+            Event::HandshakeFailed(fomoxa_net::HandshakeFailure::SchemaConflict)
         ]
     );
     assert_eq!(fake.state.borrow().soft_closes, 1);
@@ -417,4 +417,35 @@ fn message_payloads_only_live_until_the_next_tick() {
         })
         .unwrap();
     assert_eq!(next, b"two");
+}
+
+/// 02 §8: the pending queue must have a ceiling. A peer that probes every tick
+/// while never reading keeps our silence clock alive, so the heartbeat never
+/// ends the session - only the ceiling does. The reason is Unresponsive, not
+/// TransportError: the link is fine, the peer is simply not keeping up.
+#[test]
+fn a_blocked_link_and_a_probing_peer_stop_at_the_outbox_ceiling() {
+    let fake = Fake::stream();
+    let now = Instant::now();
+    let mut connection = ready(&fake, Config::default(), now);
+    fake.block(true);
+
+    let mut ending = None;
+    for tick in 0..200_000u64 {
+        fake.deliver(&[0x01]);
+        for event in connection.tick(now + Duration::from_millis(tick)) {
+            if let Event::Disconnected(reason) = event {
+                ending = Some(reason);
+            }
+        }
+        if ending.is_some() {
+            break;
+        }
+    }
+
+    assert_eq!(
+        ending,
+        Some(Disconnect::Unresponsive),
+        "the ceiling ends the session rather than letting the queue grow"
+    );
 }

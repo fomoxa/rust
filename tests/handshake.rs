@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cyclone_net::event::Event;
-use cyclone_net::frame::Frame;
-use cyclone_net::handshake::{HandshakeFailure, MAX_MESSAGES, PROTOCOL_VERSION, QUERY_TAG};
-use cyclone_net::schema::{MessageSchema, Schema};
-use cyclone_net::session::{Config, Out, Role, Session, SessionState};
+use fomoxa_net::event::Event;
+use fomoxa_net::frame::Frame;
+use fomoxa_net::handshake::{HandshakeFailure, MAX_MESSAGES, PROTOCOL_VERSION, QUERY_TAG};
+use fomoxa_net::schema::{MessageSchema, Schema};
+use fomoxa_net::session::{Config, Out, Role, Session, SessionState};
 
 #[derive(Debug, PartialEq, Eq)]
 enum End {

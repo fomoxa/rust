@@ -1,15 +1,15 @@
-# Kiến trúc cyclone-rust
+# Kiến trúc fomoxa-rust
 
-Tài liệu này tóm tắt các tầng chức năng bên trong crate `cyclone-net` (thư mục
+Tài liệu này tóm tắt các tầng chức năng bên trong crate `fomoxa-net` (thư mục
 `src/`), cách chúng giao tiếp với nhau, và quan hệ phụ thuộc giữa các module.
 Đây là tài liệu đọc nhanh cho người sửa code trong repo này — quyền quyết định
 về hành vi giao thức vẫn thuộc về
-[protocol specification](https://github.com/cyclone-protocol/protocol-specification)
+[protocol specification](https://github.com/fomoxa/specification)
 như README đã nêu.
 
-## Vị trí trong 3 tầng lớn của Cyclone
+## Vị trí trong 3 tầng lớn của Fomoxa
 
-README đã mô tả 3 tầng tổng quát: **codec** (sinh bởi `cyclonec`, ngoài crate
+README đã mô tả 3 tầng tổng quát: **codec** (sinh bởi `fomoxac`, ngoài crate
 này) → **runtime** (chính crate này) → **transport** (`src/transport/`).
 Tài liệu này đi sâu vào bên trong tầng **runtime**, vì đó là phần chứa logic
 phức tạp nhất: framing, bắt tay schema, heartbeat, và vòng lặp tick không
@@ -21,7 +21,7 @@ Từ thấp lên cao (tầng dưới không biết gì về tầng trên):
 
 | Tầng | File | Vai trò |
 |---|---|---|
-| Transport | `src/transport/mod.rs`, `tcp.rs`, `udp.rs` | Trait `Transport` (một peer) và `ServerTransport` (một listener) — I/O thô, non-blocking, không biết gì về Cyclone. TCP là `TransportKind::Stream` (byte liên tục, cần tự tách khung); UDP là `TransportKind::Message` (mỗi `recv` trả về đúng một datagram). |
+| Transport | `src/transport/mod.rs`, `tcp.rs`, `udp.rs` | Trait `Transport` (một peer) và `ServerTransport` (một listener) — I/O thô, non-blocking, không biết gì về Fomoxa. TCP là `TransportKind::Stream` (byte liên tục, cần tự tách khung); UDP là `TransportKind::Message` (mỗi `recv` trả về đúng một datagram). |
 | Frame | `src/frame.rs` | Định dạng khung nhị phân: `Data`, `Probe`, `Ack`, `Handshake`. Cung cấp `encode_*`/`decode`/`decode_packet` thuần túy, và `StreamDecoder` để ghép các byte TCP rời rạc thành từng khung hoàn chỉnh. |
 | Schema | `src/schema.rs` | `Schema`/`MessageSchema`: fingerprint của toàn schema và của từng message, cùng danh sách fingerprint tiền tố (`prefixes`) dùng để so khớp schema từng phần giữa hai phía. |
 | Handshake | `src/handshake.rs` | Giao thức bắt tay thuần túy (không I/O): mã hoá/giải mã `Hello`, `Verdict`, `Query`, `Reply`; hàm `decide()` so hai schema và quyết định Accept / Reject / Query thêm thông tin. |
