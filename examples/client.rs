@@ -1,81 +1,99 @@
-//! Standalone client example - a real, separate OS process. See `server.rs`'s
-//! own header for how to run both together.
-//!
-//!   cargo run --example client
+#[path = "demo/src/models/mod.rs"]
+mod models;
 
-include!("shared/player.rs");
-include!("shared/cyclone.codec.rs");
+#[path = "demo/src/schema.rs"]
+mod schema;
+
+macro_rules! mount_the_generated_tree {
+    () => {
+        #[path = "demo/src/generated/mod.rs"]
+        mod generated;
+    };
+}
+
+mount_the_generated_tree!();
 
 use std::thread;
 use std::time::Duration;
 
-use cyclone_net::{ClientEvent, CycloneClient, CycloneMessage};
+use fomoxa_net::connection::Connection;
+use fomoxa_net::event::Event;
+use fomoxa_net::session::Config;
+use fomoxa_net::transport::TcpTransport;
 
-const PORT: u16 = 9321;
-const PLAYER_EDGE: u32 = 1;
-const PLAYER_INPUT: u32 = 2;
+use generated::{
+    GameMessageStateCodec, PlayerInputInputCodec, Reader, Writer, GAME_MESSAGE_STATE_MESSAGE_ID,
+    PLAYER_INPUT_INPUT_MESSAGE_ID,
+};
+use models::game::{GameMessage, PlayerInput, Vector3};
 
-// The one-line adapter CycloneClient::on() needs: the project's own
-// generated Reader is bridged from &[u8] -> Player here, the same seam
-// Cyclone.Unity's CycloneDecoder<T> and cyclone-godot's `decode` Callable
-// are.
-fn decode_player(payload: &[u8]) -> Player {
-    let mut reader = Reader::new(payload);
-    let mut value = Player {
-        hp: 0,
-        name: String::new(),
-    };
-    PlayerEdgeCodec::decode(&mut reader, &mut value).expect("valid Player frame");
-    value
+const ADDRESS: &str = "127.0.0.1:9321";
+
+fn encode_input(input: &PlayerInput) -> Vec<u8> {
+    let mut writer = Writer::new();
+    PlayerInputInputCodec::encode(&mut writer, input);
+    writer.into_bytes()
 }
 
 fn main() {
-    let mut client = CycloneClient::new();
+    let transport = TcpTransport::connect(ADDRESS).expect("the server example must be running");
+    let mut connection = Connection::new(transport, schema::schema(), Config::default());
+    println!("fomoxa-net client connected to {ADDRESS}");
 
-    client.on(
-        PLAYER_EDGE,
-        decode_player,
-        |player: Player| {
-            println!(
-                "received Player {{ hp = {}, name = {:?} }}",
-                player.hp, player.name
-            );
-        },
-    );
-
-
-
-    println!("cyclone-rust client example connecting to 127.0.0.1:{PORT}");
-    client
-        .connect(("127.0.0.1", PORT), Duration::from_secs(5), Duration::from_secs(15))
-        .expect("connect to 127.0.0.1:9321 - is the server example running?");
-
-    let mut reported_connected = false;
-    loop {
-        for event in client.poll() {
+    let mut tick = 0u64;
+    let mut ready = false;
+    let mut done = false;
+    while !done {
+        for event in connection.tick_now() {
             match event {
-                ClientEvent::Connected => {
-                    if !reported_connected {
-                        reported_connected = true;
-                        println!("connected to server");
-
-                        let outgoing = PlayerInput { x: 42.0, z: 3.14 };
-                        let mut writer = Writer::new();
-                        PlayerInputClientCodec::encode(&mut writer, &outgoing);
-
-                        println!("[Client] Sending PlayerInput to server: x=42.0, z=3.14");
-                        let _ = client
-                            .send(&CycloneMessage::new(PLAYER_INPUT, writer.into_bytes()));
+                Event::Connected => println!("transport up, handshaking"),
+                Event::Ready => {
+                    println!("handshake accepted");
+                    ready = true;
+                }
+                Event::Message { id: GAME_MESSAGE_STATE_MESSAGE_ID, payload } => {
+                    let mut state = GameMessage::default();
+                    let mut reader = Reader::new(payload);
+                    match GameMessageStateCodec::decode(&mut reader, &mut state) {
+                        Ok(()) => println!(
+                            "{} at ({:.1}, {:.1}, {:.1}) hp {} alive {}",
+                            state.player_name,
+                            state.position.x,
+                            state.position.y,
+                            state.position.z,
+                            state.health,
+                            state.is_alive
+                        ),
+                        Err(error) => println!("undecodable state: {error}"),
                     }
                 }
-                ClientEvent::Disconnected => {
-                    println!("disconnected");
-                    return;
+                Event::Message { id, .. } => println!("unexpected message 0x{id:08X}"),
+                Event::HandshakeFailed(reason) => {
+                    println!("handshake refused: {reason}");
+                    done = true;
                 }
-                ClientEvent::MessageReceived(_) | ClientEvent::PongReceived => {}
+                Event::Disconnected(reason) => {
+                    println!("disconnected: {reason}");
+                    done = true;
+                }
+                Event::Probe | Event::Ack => {}
             }
         }
 
+        if ready && tick % 60 == 0 {
+            let input = PlayerInput {
+                tick,
+                direction: Vector3 { x: 1.0, y: 0.0, z: -0.5 },
+                firing: tick % 120 == 0,
+            };
+            if let Err(error) =
+                connection.send(PLAYER_INPUT_INPUT_MESSAGE_ID, &encode_input(&input))
+            {
+                println!("send refused: {error}");
+            }
+        }
+
+        tick += 1;
         thread::sleep(Duration::from_millis(16));
     }
 }

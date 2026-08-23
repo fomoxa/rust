@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "generator": "fomoxac 0.2.0",
+  "fingerprint": "sha256:bd60379718901aa552221e98151e823e4bc89f18db549e869d79efcc065bab34",
+  "fingerprint_u64": "0xBD60379718901AA5",
+  "models": {
+    "GameMessage": {
+      "source": "src/models/game.rs",
+      "fingerprint": "sha256:30a6a572f1717682e74d6dae0f0add57135119a73874c0e5ba043e2b94562dcb",
+      "codecs": [
+        "state"
+      ],
+      "fields": [
+        {
+          "name": "player_id",
+          "type": "u32",
+          "codecs": [
+            "state"
+          ]
+        },
+        {
+          "name": "player_name",
+          "type": "string",
+          "codecs": [
+            "state"
+          ]
+        },
+        {
+          "name": "position",
+          "type": "Vector3",
+          "codecs": [
+            "state"
+          ]
+        },
+        {
+          "name": "health",
+          "type": "u32",
+          "codecs": [
+            "state"
+          ]
+        },
+        {
+          "name": "is_alive",
+          "type": "bool",
+          "codecs": [
+            "state"
+          ]
+        }
+      ],
+      "messages": {
+        "state": {
+          "id": "0xEB48C20E",
+          "fingerprint": "sha256:d0b26077fe6f6fd0cf8a587eb4c906cd1544c18767d9cd5cfeb485833132a12f",
+          "fingerprint_u64": "0xD0B26077FE6F6FD0",
+          "prefixes": [
+            "sha256:38e57f1ede9363dc660d88b5d9345ae85b52e40ab33ba17629aacfc39fa5aa6a",
+            "sha256:586d8e8fafb7dbcd30201eb6601ebf48b912dd1853c71917adacca6cf161b2d8",
+            "sha256:83b41005793d70610ab1d55cb3566343acd326e50e4eb6d85a0ddae6bbbb96df",
+            "sha256:19ed6ca454a7f3ffaeedd3271b4e0a581cfdb32153e40ac79c2a32a0394b43f6",
+            "sha256:d0b26077fe6f6fd0cf8a587eb4c906cd1544c18767d9cd5cfeb485833132a12f"
+          ],
+          "prefixes_u64": [
+            "0x38E57F1EDE9363DC",
+            "0x586D8E8FAFB7DBCD",
+            "0x83B41005793D7061",
+            "0x19ED6CA454A7F3FF",
+            "0xD0B26077FE6F6FD0"
+          ],
+          "fields": [
+            {
+              "name": "player_id",
+              "type": "u32"
+            },
+            {
+              "name": "player_name",
+              "type": "string"
+            },
+            {
+              "name": "position",
+              "type": "Vector3"
+            },
+            {
+              "name": "health",
+              "type": "u32"
+            },
+            {
+              "name": "is_alive",
+              "type": "bool"
+            }
+          ]
+        }
+      }
+    },
+    "PlayerInput": {
+      "source": "src/models/game.rs",
+      "fingerprint": "sha256:6c6f3ae09e7b9a8a952993a9ab9764413703bb32e3ffafdda062abb0d8d926c4",
+      "codecs": [
+        "input"
+      ],
+      "fields": [
+        {
+          "name": "tick",
+          "type": "u64",
+          "codecs": [
+            "input"
+          ]
+        },
+        {
+          "name": "direction",
+          "type": "Vector3",
+          "codecs": [
+            "input"
+          ]
+        },
+        {
+          "name": "firing",
+          "type": "bool",
+          "codecs": [
+            "input"
+          ]
+        }
+      ],
+      "messages": {
+        "input": {
+          "id": "0x74FDFA74",
+          "fingerprint": "sha256:9b57ff586837d6541abe689c04bce84075d2e2d29b10113c8376b1db5e82fb25",
+          "fingerprint_u64": "0x9B57FF586837D654",
+          "prefixes": [
+            "sha256:8398812e0ae8de2c86488faa8920b918006d0967ce058e54e09d8346e70f3c1c",
+            "sha256:2840a5c025e65fd37d0fe23a62464dfcf25d2b6e8ca979acf8495f654427544c",
+            "sha256:9b57ff586837d6541abe689c04bce84075d2e2d29b10113c8376b1db5e82fb25"
+          ],
+          "prefixes_u64": [
+            "0x8398812E0AE8DE2C",
+            "0x2840A5C025E65FD3",
+            "0x9B57FF586837D654"
+          ],
+          "fields": [
+            {
+              "name": "tick",
+              "type": "u64"
+            },
+            {
+              "name": "direction",
+              "type": "Vector3"
+            },
+            {
+              "name": "firing",
+              "type": "bool"
+            }
+          ]
+        }
+      }
+    },
+    "Vector3": {
+      "source": "src/models/game.rs",
+      "fingerprint": "sha256:e6ef972a0e1fefbef956645d6921def39e592022f35fe8a58c9b935141520759",
+      "codecs": [
+        "state",
+        "input"
+      ],
+      "fields": [
+        {
+          "name": "x",
+          "type": "f32",
+          "codecs": [
+            "state",
+            "input"
+          ]
+        },
+        {
+          "name": "y",
+          "type": "f32",
+          "codecs": [
+            "state",
+            "input"
+          ]
+        },
+        {
+          "name": "z",
+          "type": "f32",
+          "codecs": [
+            "state",
+            "input"
+          ]
+        }
+      ],
+      "messages": {
+        "state": {
+          "id": "0xE128DBD8",
+          "fingerprint": "sha256:61a493617c048a9cc659546980235e83abefc13b17d7d00fcf10da8246e9a3dd",
+          "fingerprint_u64": "0x61A493617C048A9C",
+          "prefixes": [
+            "sha256:445cdc98f7d0c93592133fbe0b3c52e7c55622563558dcda8f1e7e9c37bc04fb",
+            "sha256:0051244fd0f366d5e35a5258d047a2ae4fcfa7cb238c060ee4fa37bbda5c34f5",
+            "sha256:61a493617c048a9cc659546980235e83abefc13b17d7d00fcf10da8246e9a3dd"
+          ],
+          "prefixes_u64": [
+            "0x445CDC98F7D0C935",
+            "0x0051244FD0F366D5",
+            "0x61A493617C048A9C"
+          ],
+          "fields": [
+            {
+              "name": "x",
+              "type": "f32"
+            },
+            {
+              "name": "y",
+              "type": "f32"
+            },
+            {
+              "name": "z",
+              "type": "f32"
+            }
+          ]
+        },
+        "input": {
+          "id": "0x6AA0B45C",
+          "fingerprint": "sha256:b6f55f6b96e4c39d87c6c1afcc003d4ba19c7ac41a1b44ce31a63235a102edd4",
+          "fingerprint_u64": "0xB6F55F6B96E4C39D",
+          "prefixes": [
+            "sha256:d7316ca3587095df943774282243df9a54fd3c43574680f7566df597a0de9aaa",
+            "sha256:faecc9ce83d332a8613f3df4f45c8327898bed3c90d57bae94763cc06a6d1dac",
+            "sha256:b6f55f6b96e4c39d87c6c1afcc003d4ba19c7ac41a1b44ce31a63235a102edd4"
+          ],
+          "prefixes_u64": [
+            "0xD7316CA3587095DF",
+            "0xFAECC9CE83D332A8",
+            "0xB6F55F6B96E4C39D"
+          ],
+          "fields": [
+            {
+              "name": "x",
+              "type": "f32"
+            },
+            {
+              "name": "y",
+              "type": "f32"
+            },
+            {
+              "name": "z",
+              "type": "f32"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

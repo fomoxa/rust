@@ -1,72 +1,105 @@
-//! Standalone server example - a real, separate OS process. Run this and
-//! `client.rs` as two different processes to see them talk over a real TCP
-//! socket, not a simulated one in a single process.
-//!
-//!   cargo run --example server
-//!   cargo run --example client   # in another terminal, once this prints "listening"
+#[path = "demo/src/models/mod.rs"]
+mod models;
 
-include!("shared/player.rs");
-include!("shared/cyclone.codec.rs");
+#[path = "demo/src/schema.rs"]
+mod schema;
+
+macro_rules! mount_the_generated_tree {
+    () => {
+        #[path = "demo/src/generated/mod.rs"]
+        mod generated;
+    };
+}
+
+mount_the_generated_tree!();
 
 use std::thread;
 use std::time::Duration;
 
-use cyclone_net::{ConnectionId, CycloneMessage, CycloneServer, ServerEvent};
+use fomoxa_net::event::Event;
+use fomoxa_net::server::Server;
+use fomoxa_net::session::Config;
+use fomoxa_net::transport::TcpListenerTransport;
 
-const PORT: u16 = 9321;
-const PLAYER_EDGE: u32 = 1;
-const PLAYER_INPUT: u32 = 2;
+use generated::{
+    GameMessageStateCodec, PlayerInputInputCodec, Reader, Writer, GAME_MESSAGE_STATE_MESSAGE_ID,
+    PLAYER_INPUT_INPUT_MESSAGE_ID,
+};
+use models::game::{GameMessage, PlayerInput, Vector3};
+
+const ADDRESS: &str = "127.0.0.1:9321";
+
+fn encode_state(state: &GameMessage) -> Vec<u8> {
+    let mut writer = Writer::new();
+    GameMessageStateCodec::encode(&mut writer, state);
+    writer.into_bytes()
+}
+
+fn step(state: &mut GameMessage, input: &PlayerInput) {
+    state.position.x += input.direction.x;
+    state.position.y += input.direction.y;
+    state.position.z += input.direction.z;
+    if input.firing {
+        state.health = state.health.saturating_sub(10);
+        state.is_alive = state.health > 0;
+    }
+}
 
 fn main() {
-    let mut server = CycloneServer::new();
-    server
-        .start(("127.0.0.1", PORT))
-        .expect("bind 127.0.0.1:9321 - is something else already using this port?");
+    let listener = TcpListenerTransport::bind(ADDRESS).expect("bind 127.0.0.1:9321");
+    let mut server = Server::new(listener, schema::schema(), Config::default());
+    println!("fomoxa-net server listening on {ADDRESS}");
 
-    println!("cyclone-rust server example listening on port {PORT}");
+    let mut state = GameMessage {
+        player_id: 1,
+        player_name: "Knight".to_owned(),
+        position: Vector3 { x: 10.5, y: 20.3, z: -5.1 },
+        health: 100,
+        is_alive: true,
+        last_seen_at: 0,
+    };
 
-    server.on(
-        PLAYER_INPUT,
-        |payload: &[u8]| {
-            let mut reader = Reader::new(payload);
-            let mut value = PlayerInput { x: 0.0, z: 0.0 };
-            PlayerInputClientCodec::decode(&mut reader, &mut value)
-                .expect("valid PlayerInput frame");
-            value
-        },
-        |id: ConnectionId, input: PlayerInput| {
-            println!(
-                "received PlayerInput {{connection = {:?}, x = {}, z = {} }}",
-                id, input.x, input.z
-            );
-        },
-    );
-
+    let mut replies = Vec::new();
     loop {
-        for event in server.poll() {
-            match event {
-                ServerEvent::ClientConnected(id) => {
-                    println!("client connected - broadcasting a Player");
-
-                    let outgoing = Player {
-                        hp: 100,
-                        name: "sensor-1".to_owned(),
-                    };
-                    let mut writer = Writer::new();
-                    PlayerEdgeCodec::encode(&mut writer, &outgoing);
-
-                    let _ = server.send_to(
-                        id,
-                        &CycloneMessage::new(PLAYER_EDGE, writer.into_bytes()),
-                    );
+        replies.clear();
+        for seen in server.tick_now() {
+            match seen.event {
+                Event::Connected => println!("{} connected", seen.peer),
+                Event::Ready => {
+                    println!("{} handshake accepted", seen.peer);
+                    replies.push(seen.peer);
                 }
-                ServerEvent::ClientDisconnected(_) => println!("client disconnected"),
-                ServerEvent::MessageReceived(id, _) => {
-                    println!("received PlayerInput {{connection = {:?} }}", id);
+                Event::Message { id: PLAYER_INPUT_INPUT_MESSAGE_ID, payload } => {
+                    let mut input = PlayerInput::default();
+                    let mut reader = Reader::new(payload);
+                    match PlayerInputInputCodec::decode(&mut reader, &mut input) {
+                        Ok(()) => {
+                            step(&mut state, &input);
+                            println!(
+                                "{} input at tick {} -> hp {}",
+                                seen.peer, input.tick, state.health
+                            );
+                            replies.push(seen.peer);
+                        }
+                        Err(error) => println!("{} sent an undecodable input: {error}", seen.peer),
+                    }
                 }
-                ServerEvent::PongReceived(_) => {}
+                Event::Message { id, .. } => {
+                    println!("{} sent an unexpected message 0x{id:08X}", seen.peer)
+                }
+                Event::HandshakeFailed(reason) => println!("{} refused: {reason}", seen.peer),
+                Event::Disconnected(reason) => println!("{} gone: {reason}", seen.peer),
+                Event::Probe | Event::Ack => {}
             }
         }
+
+        if !replies.is_empty() {
+            let payload = encode_state(&state);
+            for peer in &replies {
+                let _ = server.send(*peer, GAME_MESSAGE_STATE_MESSAGE_ID, &payload);
+            }
+        }
+
         thread::sleep(Duration::from_millis(16));
     }
 }
