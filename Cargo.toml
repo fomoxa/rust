@@ -7,7 +7,7 @@ description = "The Fomoxa runtime for Rust: framing, schema handshake, heartbeat
 license = "Apache-2.0"
 keywords = ["fomoxa", "protocol", "binary", "networking", "codec"]
 categories = ["network-programming", "encoding"]
-repository = "https://github.com/fomoxa/cyclone-rust"
+repository = "https://github.com/fomoxa/rust"
 homepage = "https://fomoxa.github.io"
 readme = "README.md"
 
