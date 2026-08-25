@@ -80,6 +80,11 @@ impl EventSink {
         self.records.clear();
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.arena.shrink_to_fit();
+        self.records.shrink_to_fit();
+    }
+
     pub fn len(&self) -> usize {
         self.records.len()
     }

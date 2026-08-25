@@ -6,10 +6,10 @@
 It implements framing, the schema handshake, heartbeat, and a non-blocking TCP/UDP tick loop, as defined by the Fomoxa specification and implementation guide.
 The crate declares no runtime dependency, does not use an async runtime, does not spawn background threads, and contains no wire-format codec.
 
-## 2. Authoritative References
+## 2. Authoritative references
 
-The behavior of this crate is defined by the documents below, not by this file.
-Where this crate and another Fomoxa SDK disagree on behavior, the referenced documents decide; agreement between two SDKs is not itself evidence of conformance, since both could implement the same clause incorrectly in the same way.
+The documents below define the behavior of this crate.
+Where this crate and another Fomoxa SDK disagree, those documents decide. Two SDKs that agree have not shown conformance by agreeing, since both could implement the same clause wrongly in the same way.
 
 | Document | Scope |
 |---|---|
@@ -53,7 +53,7 @@ fomoxa-net = "0.1.1"
 
 The crate declares no dependency that reaches a consumer. `fomoxa-attributes` is listed only under `[dev-dependencies]` in this repository's own `Cargo.toml`; it exists solely because `examples/demo/src/models/` is annotated source, and the `#[network]`/`#[codec]` attribute macros must resolve for `rustc` to accept it. `fomoxac` reads those attributes at code-generation time; they compile away to nothing at runtime, and none of it is part of the published crate's dependency graph.
 
-## 5. Building From Source
+## 5. Building from source
 
 ```sh
 cargo build
@@ -62,7 +62,7 @@ cargo test
 
 `cargo test` compiles and runs the test suite, including `tests/demo.rs`, which mounts `examples/demo/` through `#[path]` and therefore also requires the `fomoxa-attributes` dev-dependency to compile. Building and testing require nothing beyond the Rust standard library and that one dev-dependency; no other package is fetched.
 
-## 6. Public API Surface
+## 6. Public API surface
 
 The crate root re-exports the following types from its modules (`src/lib.rs`):
 
@@ -79,7 +79,7 @@ The crate root re-exports the following types from its modules (`src/lib.rs`):
 
 Each module is also public in its own right (for example, `fomoxa_net::connection::Connection` and `fomoxa_net::Connection` name the same type).
 
-## 7. Quick Start
+## 7. Quick start
 
 ### 7.1 Client
 
@@ -101,7 +101,7 @@ loop {
 }
 ```
 
-`schema()` is built from constants `fomoxac` generates - see [Schema Construction](#82-schema-construction).
+`schema()` is built from constants `fomoxac` generates; see [Schema construction](#82-schema-construction).
 
 ### 7.2 Server
 
@@ -129,20 +129,20 @@ cargo run --example server
 cargo run --example client
 ```
 
-## 8. The Codec Boundary
+## 8. The codec boundary
 
-### 8.1 Why No Codec Ships Here
+### 8.1 Why no codec ships here
 
-This crate contains no implementation of the RFC-0002 codec. `fomoxac` generates the codec runtime - `Writer`, `Reader`, `DecodeError`, `Limits` - into the consuming project, together with one codec per message and the fingerprint constants described below. There is exactly one Rust implementation of RFC-0002, and it lives in the generator; its conformance against the RFC-0003 vectors is validated there, against the generated code that actually ships, not in this repository.
+This crate contains no implementation of the RFC-0002 codec. `fomoxac` generates the codec runtime (`Writer`, `Reader`, `DecodeError`, `Limits`) into the consuming project, together with one codec per message and the fingerprint constants described below. There is exactly one Rust implementation of RFC-0002, and it lives in the generator, which checks it against the RFC-0003 vectors using the generated code that ships.
 
-A second, hand-written implementation of RFC-0002 inside this crate would be a second implementation of the same wire format in the same language. RFC-0001 §6.1 states that such drift is silent: both ends continue to decode without error, and only the resulting bytes stop matching. This crate carries none, to avoid that risk.
+A hand-written RFC-0002 implementation inside this crate would be a second encoder for the same wire format in the same language. RFC-0001 §6.1 states that such drift is silent: both ends keep decoding without error, and only the bytes they produce stop matching. This crate carries none, to avoid that risk.
 
-What this crate needs from generated code is two things:
+This crate needs two things from generated code:
 
-- **the message id**, used for `send` and matched against in `Event::Message`;
-- **the schema table** - `FOMOXA_SCHEMA_FINGERPRINT` and, per message, its id, its fingerprint, and its prefix chain - which is assembled into a `Schema` and is what the handshake compares.
+- the message id, used for `send` and matched against in `Event::Message`;
+- the schema table, meaning `FOMOXA_SCHEMA_FINGERPRINT` and, per message, its id, its fingerprint and its prefix chain, which is assembled into a `Schema` for the handshake to compare.
 
-### 8.2 Schema Construction
+### 8.2 Schema construction
 
 ```rust
 use fomoxa_net::{MessageSchema, Schema};
@@ -156,7 +156,7 @@ let schema = Schema::new(
 )?;
 ```
 
-Encoding is the generated codec's job; this crate only ever sees the bytes it produced:
+The generated codec does the encoding, and this crate only sees the bytes it produced:
 
 ```rust
 let mut writer = generated::Writer::new();
@@ -164,9 +164,9 @@ GameMessageStateCodec::encode(&mut writer, &state);
 connection.send(generated::GAME_MESSAGE_STATE_MESSAGE_ID, writer.as_slice())?;
 ```
 
-### 8.3 The Demo Project
+### 8.3 The demo project
 
-`examples/demo/` is this path, committed as a working project rather than only described:
+`examples/demo/` is this path, committed as a working project:
 
 ```
 examples/demo/
@@ -183,7 +183,7 @@ examples/demo/
   .fomoxa/schema.json          the build-time record fomoxac compares against
 ```
 
-The models mirror RFC-0002 §15's worked example: a `u32`, a `string`, a nested `Vector3` of three `f32`, another `u32`, and a `bool`, plus a `PlayerInput` going the other way. `GameMessage::last_seen_at` is deliberately not annotated with `#[network]`/`#[codec]`: it is a field of the Rust type that no codec carries, and `tests/demo.rs` asserts it arrives as `0` on the receiving side, having never been written to the wire.
+The models mirror RFC-0002 §15's worked example: a `u32`, a `string`, a nested `Vector3` of three `f32`, another `u32`, and a `bool`, plus a `PlayerInput` going the other way. `GameMessage::last_seen_at` is left without `#[network]`/`#[codec]` on purpose. It is a field of the Rust type that no codec carries, and `tests/demo.rs` asserts that it arrives as `0` on the receiving side, since it never reaches the wire.
 
 Regenerating after editing a model is done from that directory:
 
@@ -191,9 +191,9 @@ Regenerating after editing a model is done from that directory:
 fomoxac generate
 ```
 
-Two points about the generated tree: it is committed exactly as `fomoxac` writes it, and `rustfmt` would otherwise reformat it into permanent disagreement with the generator, which is why the examples and `tests/demo.rs` mount it through a `macro_rules!` wrapper that `rustfmt` does not follow into. No CI job in this repository checks the tree for freshness against a live `fomoxac` run, because that would require installing a generator from outside this repository; this repository's own CI builds and tests using only what is checked in.
+The generated tree is committed exactly as `fomoxac` writes it. `rustfmt` would reformat it and leave it permanently different from the generator's output, so the examples and `tests/demo.rs` mount it through a `macro_rules!` wrapper that `rustfmt` does not look inside. No CI job here checks whether the tree is current against a live `fomoxac` run, because that would need a generator installed from outside this repository; this repository's CI builds and tests using only what is checked in.
 
-## 9. Wire Format
+## 9. Wire format
 
 Every byte the runtime places on a transport belongs to a frame, and every frame starts with a type byte.
 
@@ -204,7 +204,7 @@ Every byte the runtime places on a transport belongs to a frame, and every frame
 | 2 | ACK | one byte, no body |
 | 3 | HANDSHAKE | 5-byte header, then an opaque payload |
 
-### 9.1 Data Frame
+### 9.1 Data frame
 
 ```
   +----+----+----+---------------+---------------+---------------------+
@@ -214,9 +214,9 @@ Every byte the runtime places on a transport belongs to a frame, and every frame
    ^0    ^1   ^2      ^3-6            ^7-10           ^11..
 ```
 
-The message id is a message *type*, assigned by the schema. It is not a sequence number: nothing in this crate reorders, retransmits, or deduplicates frames.
+The message id is a message type, assigned by the schema, and not a sequence number: nothing in this crate reorders, retransmits, or deduplicates frames.
 
-### 9.2 Handshake Frame
+### 9.2 Handshake frame
 
 ```
   +----+---------------+----------------------------+
@@ -225,13 +225,13 @@ The message id is a message *type*, assigned by the schema. It is not a sequence
   +----+---------------+----------------------------+
 ```
 
-### 9.3 Framing On A Stream Vs. A Packet
+### 9.3 Framing on a stream and on a packet
 
-On a byte stream, frames sit back to back with no separator, and the decoder works incrementally - it can be fed one byte at a time. A framing violation on a stream is fatal: there is no resynchronization point, so the decoder is left permanently unable to make progress and the session closes.
+On a byte stream, frames sit back to back with no separator, and the decoder works incrementally, so it can be fed one byte at a time. A framing violation on a stream is fatal: there is no resynchronization point, so the decoder is left permanently unable to make progress and the session closes.
 
-On a packet transport, one packet holds exactly one frame; a short packet or a packet with bytes left over is invalid. A framing violation there is not fatal: that packet is dropped and the session continues, because a single datagram cannot corrupt shared parsing state the way a stream desync can. This difference in severity follows directly from the difference between a shared decode buffer and a self-contained packet.
+On a packet transport, one packet holds exactly one frame; a short packet or a packet with bytes left over is invalid. A framing violation there is not fatal: that packet is dropped and the session continues, because a single datagram cannot corrupt shared parsing state the way a stream desync can. A stream shares one decode buffer across frames, and a packet is self-contained.
 
-## 10. The Handshake
+## 10. The handshake
 
 The client sends one hello. The server is the only side that compares anything, and it answers with a single verdict byte. The usual case is one round; exactly one case needs a second.
 
@@ -247,7 +247,7 @@ The client sends one hello. The server is the only side that compares anything, 
     |  <-- HANDSHAKE(verdict, 1 byte) ----------- |
 ```
 
-### 10.1 Hello Payload
+### 10.1 Hello payload
 
 ```
   protocol version   4B u32 LE   always 2
@@ -260,20 +260,20 @@ The client sends one hello. The server is the only side that compares anything, 
   length == 16 + 14 * count, exactly
 ```
 
-### 10.2 First Byte Of A Handshake Reply
+### 10.2 First byte of a handshake reply
 
-The `Verdict` enum in `src/handshake.rs` defines four values (0-3). The wire also uses a fifth tag, `QUERY_TAG` (4), for the one case that is not a final answer:
+The `Verdict` enum in `src/handshake.rs` defines four values (0 to 3). The wire also uses a fifth tag, `QUERY_TAG` (4), for the one case that is not a final answer:
 
 | Byte | Meaning |
 |---|---|
 | 0 | accepted (`Verdict::Accept`) |
-| 1 | wrong handshake version - the hello layout itself differs (`Verdict::WrongVersion`) |
-| 2 | schema conflict - a message both sides know puts different fields at a shared index (`Verdict::SchemaConflict`) |
+| 1 | wrong handshake version: the hello layout itself differs (`Verdict::WrongVersion`) |
+| 2 | schema conflict: a message both sides know puts different fields at a shared index (`Verdict::SchemaConflict`) |
 | 3 | malformed hello (`Verdict::MalformedHello`) |
 | 4 | not a verdict: `QUERY_TAG`, a request for the client's prefix fingerprint at a given field count; it never ends the session |
 | ≥5 | not a recognized value; treated as a malformed/broken peer |
 
-### 10.3 How The Server Decides Compatibility
+### 10.3 How the server decides compatibility
 
 If the two schemas' overall fingerprints are equal, the handshake is accepted without inspecting a single message entry. Otherwise, for every message id both sides declare (a message only one side knows is skipped, since it is never exchanged), `decide()` in `src/handshake.rs` applies these checks in order:
 
@@ -287,9 +287,9 @@ Rule 5 is the only case that produces the query round: `Decision::Query` is retu
 
 This is RFC-0002 §9.1's prefix test written out in code: comparing at `k = min(n_client, n_server)` asks exactly whether the shorter field list is an exact prefix of the longer one.
 
-**Different schemas are still accepted.** The condition applied is not "identical", it is "wherever the two schemas overlap, they agree." A peer that knows messages the other does not, or that carries extra fields at the end of a shared message, connects normally - RFC-0002 §9.1 requires this. Only two different fields at the same index inside the shared part are refused, and one such message refuses the whole session.
+Two different schemas are accepted as long as they agree wherever they overlap. A peer that knows messages the other does not, or that carries extra fields at the end of a shared message, connects normally, as RFC-0002 §9.1 requires. Only two different fields at the same index inside the shared part are refused, and one such message refuses the whole session.
 
-### 10.4 The Prefix Chain
+### 10.4 The prefix chain
 
 A message with `n` fields has `n` prefix fingerprints; entry `k-1` covers its first `k` fields, and the last entry is the message's own fingerprint. The chain never goes on the wire in full: each side keeps its own copy, and a hello sends only one value (the message's own fingerprint) plus a field count per message. Only the query case (rule 5 above) needs a value the peer alone can compute, and only then is there a second round.
 
@@ -301,7 +301,7 @@ Three rules bound the exchange:
 2. A client that receives a second query treats the session as broken (`HandshakeFailure::MalformedPeer`).
 3. The client's handshake deadline covers the whole exchange and is not reset by the extra round.
 
-### 10.5 Session Timers
+### 10.5 Session timers
 
 `Config` (`src/session.rs`) carries the following fields and defaults:
 
@@ -310,10 +310,10 @@ Three rules bound the exchange:
 | `handshake_timeout` | 5 s | Client: a hard deadline on the whole handshake. Server: the silence window allowed while a peer has not yet finished handshaking. |
 | `heartbeat_interval` | 5 s | How long a peer may be silent before it is probed. |
 | `heartbeat_timeout` | 15 s | How long a probe may go unanswered before the peer is declared dead. |
-| `max_frames_per_tick` | 64 | Upper bound on frames processed per `tick()` call, see [Limits](#13-limits). |
+| `max_frames_per_tick` | 64 | Upper bound on frames processed per `tick()` call, see [Limits](#14-limits). |
 | `recv_buffer_size` | 65 536 (64 KiB) | Initial size of the per-connection receive buffer; grown on demand when a transport reports `RecvOutcome::NeedCapacity`. |
 
-A client mid-handshake has no heartbeat: it has a hard deadline and is waiting for exactly one thing. A server has a heartbeat timer for every peer, because it must distinguish "still computing" from "vanished". A client that answers probes without ever sending a valid hello can hold a server slot indefinitely; this is the specified behavior, and no cap beyond the ones above is applied.
+A client in the middle of a handshake has no heartbeat: it has a hard deadline and waits for one answer. A server keeps a heartbeat timer for every peer, because it has to tell a peer that is still computing from one that has gone. A client that answers probes without ever sending a valid hello can hold a server slot indefinitely; this is the specified behavior, and no cap beyond the ones above is applied.
 
 ## 11. Heartbeat
 
@@ -333,14 +333,14 @@ A probe is sent on silence, never on a fixed timer:
 
 A peer with traffic flowing is never probed, and no peer is disconnected without being probed first. Worst-case detection time is `heartbeat_interval + heartbeat_timeout`, 20 seconds with the defaults above. An `ACK` is sent from inside the tick in response to a `PROBE`, whether or not the application ever inspects the corresponding event.
 
-## 12. The Tick Loop
+## 12. The tick loop
 
-### 12.1 Tick Order
+### 12.1 Tick order
 
 One call to `tick()` performs, in this fixed order:
 
 1. The `Connected` event, once, on a session's first tick.
-2. Flushing whatever frame is still queued from a previous tick, before anything else is sent - wire order is preserved.
+2. Flushing whatever frame is still queued from a previous tick, before anything else is sent, which preserves wire order.
 3. Draining arriving frames, up to `max_frames_per_tick`.
 4. Running the protocol clocks: handshake deadline, probe, dead-peer declaration.
 5. Handing the resulting event list to the application.
@@ -360,9 +360,9 @@ Nothing in `tick()` blocks, sleeps, or spawns a thread. `tick(now)` takes the ti
 
 Exactly one terminal event is raised per session: if a handshake failed, no `Disconnected` follows it, even if the transport closes a moment later.
 
-**Payload lifetime:** `Event::Message`'s payload borrows an internal arena buffer that the next `tick()` call on the same session overwrites. The borrow checker enforces this, since the event iterator holds a reference into the connection; retaining the data past the current tick requires copying it out. This is the borrowed form the implementation guide permits; other Fomoxa SDKs may hand out owned data instead.
+On payload lifetime: `Event::Message`'s payload borrows an internal arena buffer that the next `tick()` call on the same session overwrites. The borrow checker enforces this, since the event iterator holds a reference into the connection; retaining the data past the current tick requires copying it out. This is the borrowed form the implementation guide permits; other Fomoxa SDKs may hand out owned data instead.
 
-### 12.3 Send Errors
+### 12.3 Send errors
 
 `send` is refused, never queued, in these cases:
 
@@ -375,9 +375,9 @@ Exactly one terminal event is raised per session: if a handshake failed, no `Dis
 
 `TooLarge` does not close the session, and the refused frame is not retried automatically.
 
-## 13. Writing A Transport
+## 13. Writing a transport
 
-### 13.1 The Transport Trait
+### 13.1 The transport trait
 
 A transport moves bytes and reports what happened, immediately. It must never block, spawn a thread, call back into the runtime, interpret a byte of the frame, or add a header of its own.
 
@@ -391,7 +391,7 @@ pub trait Transport {
 }
 ```
 
-### 13.2 Outcome Vocabulary
+### 13.2 Outcome vocabulary
 
 | Outcome | Meaning |
 |---|---|
@@ -407,11 +407,11 @@ pub trait Transport {
 | `RecvOutcome::Closed` | As `SendOutcome::Closed`. |
 | `RecvOutcome::Error(_)` | As `SendOutcome::Error`. |
 
-Declaring `TransportKind::Stream` makes the runtime insert its own framing layer (`StreamDecoder`) in front of the transport's bytes. Declaring `TransportKind::Message` is a promise that each `recv` call returns exactly one whole frame, never a partial one. If the underlying transport distinguishes text from binary payloads, the binary mode must be used: a Fomoxa frame is not valid UTF-8.
+Declaring `TransportKind::Stream` makes the runtime insert its own framing layer (`StreamDecoder`) in front of the transport's bytes. Declaring `TransportKind::Message` promises that each `recv` call returns exactly one whole frame. If the underlying transport distinguishes text from binary payloads, the binary mode must be used: a Fomoxa frame is not valid UTF-8.
 
-A control frame produced while a data frame is already queued is appended behind it rather than dropped or sent out of order: wire order is preserved, and control frames are small and infrequent enough that this does not create unbounded queueing. Application-level `send` calls are still refused with `Congested` in that state.
+A control frame produced while a data frame is already queued is appended behind it, which preserves wire order; control frames are small and infrequent enough that this never queues without bound. Application-level `send` calls are still refused with `Congested` in that state.
 
-### 13.3 Built-in Transports
+### 13.3 Built-in transports
 
 | Transport | `TransportKind` | Notes |
 |---|---|---|
@@ -420,7 +420,7 @@ A control frame produced while a data frame is already queued is appended behind
 | `UdpTransport` | `Message` | A connected, non-blocking `UdpSocket` for client use. |
 | `UdpServerTransport` / `UdpPeerTransport` | `Message` | A shared, non-blocking `UdpSocket` demultiplexed by source address; `UdpPeerTransport` is one peer's view of it. |
 
-All four are implemented on `std::net` only. Internally, `UdpServerTransport` reads up to 256 datagrams from the socket per `accept()` call, tracks at most 4096 distinct peer addresses, and queues at most 64 pending datagrams per peer, dropping the oldest queued datagram for a peer once that queue is full. WebSocket, TLS, and QUIC transports are out of scope for this crate and require no change to it - they are implemented as separate crates against the `Transport` trait.
+All four are implemented on `std::net` only. Internally, `UdpServerTransport` reads up to 256 datagrams from the socket per `accept()` call, tracks at most 4096 distinct peer addresses, and queues at most 64 pending datagrams per peer, dropping the oldest queued datagram for a peer once that queue is full. WebSocket, TLS, and QUIC transports are out of scope for this crate and need no change to it; they are written as separate crates against the `Transport` trait.
 
 ## 14. Limits
 
@@ -436,32 +436,32 @@ All four are implemented on `std::net` only. Internally, `UdpServerTransport` re
 
 ## 15. Testing
 
-RFC-0003's conformance vectors test a codec, and the codec ships from `fomoxac`; that suite runs there, against the generated code that actually ships, and is not duplicated in this repository.
+RFC-0003's conformance vectors test a codec, and the codec ships from `fomoxac`, so that suite runs there, against the generated code that ships, and is not repeated here.
 
-What this repository's own suite proves is the layer above it, checked against the implementation guide. As of this writing it contains 70 `#[test]` functions across six files:
+This repository's own suite tests the layer above the codec against the implementation guide. It has 72 `#[test]` functions across six files:
 
 | File | Test count | Covers |
 |---|---|---|
 | `tests/framing.rs` | 12 | Byte-for-byte frame layout, a stream fed one byte at a time, stream poisoning after a violation, and the size caps. |
 | `tests/handshake.rs` | 26 | All branches of the fingerprint comparison, both query-round outcomes, and malformed-payload handling. |
 | `tests/heartbeat.rs` | 11 | Probe suppression under traffic, a full expiry cycle without waiting on real time, and dead-peer declaration. |
-| `tests/runtime.rs` | 16 | Blocked transports, partial writes, `NeedCapacity`, `TooLarge` not closing the session, the per-tick frame budget, and exactly one terminal event per session. |
+| `tests/runtime.rs` | 18 | Blocked transports, partial writes, `NeedCapacity`, `TooLarge` not closing the session, the per-tick frame budget, and exactly one terminal event per session. |
 | `tests/interop.rs` | 4 | Real TCP and UDP loopback sockets, both directions, including a handshake that needs the second (query) round. |
 | `tests/demo.rs` | 1 | A `fomoxac`-generated codec carried over a real TCP socket, both directions, model in and model out. |
 
-Two of the `tests/handshake.rs` cases correspond to RFC-0003 §8.6: a peer that appended a field at the end of a message, and a peer that dropped one from the end, both connect successfully, matching vectors V-001 and V-002, which require that such peers not be rejected.
+Two of the `tests/handshake.rs` cases correspond to RFC-0003 §8.6: a peer that appended a field at the end of a message and a peer that dropped one from the end both connect, as vectors V-001 and V-002 require.
 
-Cross-implementation checking (RFC-0003 §12, X-001 through X-003) is not something a single repository's test suite can perform on its own; byte-for-byte equality with another SDK's output is the form of evidence that applies there.
+A single repository's suite cannot perform cross-implementation checking (RFC-0003 §12, X-001 through X-003); that needs byte-for-byte comparison with another SDK's output.
 
-CI (`.github/workflows/ci.yml`) runs four jobs: `test` builds with `--all-targets` and runs `cargo test` on Ubuntu, macOS, and Windows, so that non-blocking socket behavior and UDP's message-too-large error, which differ between Berkeley sockets and Winsock, are exercised on all three; `lint` runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`; `msrv` rebuilds and retests against Rust 1.70.0, the version pinned by `rust-version` in `Cargo.toml`; and `package` runs `cargo package` and verifies that the generated demo tree is present in the resulting archive, since `examples/demo/src/generated/` is not a build target of its own and could otherwise be silently excluded from what is published.
+CI (`.github/workflows/ci.yml`) runs four jobs: `test` builds with `--all-targets` and runs `cargo test` on Ubuntu, macOS, and Windows, so that non-blocking socket behavior and UDP's message-too-large error, which differ between Berkeley sockets and Winsock, are exercised on all three; `lint` runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`; `msrv` rebuilds and retests against Rust 1.70.0, the version pinned by `rust-version` in `Cargo.toml`; and `package` runs `cargo package` and verifies that the generated demo tree is present in the resulting archive, since `examples/demo/src/generated/` is not a build target of its own and could otherwise be left out of the published crate without any error.
 
-## 16. Explicit Non-Goals
+## 16. Non-goals
 
-No reordering, no retransmission, no deduplication, no encryption, no compression, no checksums, no matchmaking, no prediction. Over TCP, ordering and integrity are inherited from the transport; over UDP, packets may be lost, reordered, or duplicated, and are handed to the application exactly as received. Heartbeat and dead-peer detection behave identically on both, because they are driven by a clock rather than by sequence numbers.
+No reordering, no retransmission, no deduplication, no encryption, no compression, no checksums, no matchmaking, no prediction. Over TCP, ordering and integrity are inherited from the transport; over UDP, packets may be lost, reordered, or duplicated, and are handed to the application exactly as received. Heartbeat and dead-peer detection behave the same on both, because a clock drives them and sequence numbers play no part.
 
 Reconnection is left to the application. A transport that reconnected on its own would leave the two ends disagreeing about whether the session is still alive.
 
-## 17. Source Layout
+## 17. Source layout
 
 ```
 src/frame.rs        frame envelope, packet decode, incremental stream decoder
@@ -475,7 +475,7 @@ src/transport/      the Transport trait, TCP and UDP
 examples/demo/      one annotated model, and the tree fomoxac wrote from it
 ```
 
-`session.rs` has no knowledge of sockets: it takes frames and timestamps in and returns intended reactions (frames to send, events to raise) out, never touching a `Transport` directly. `connection.rs`'s `Core` is the sole place those intentions become bytes written through `Wire`/`Transport`. This separation is what makes the session's expiry and handshake behavior testable with plain unit tests, without a simulated transport, and it is also why the transport implementations themselves stay small.
+`session.rs` knows nothing of sockets: it takes frames and timestamps in and returns intended reactions (frames to send, events to raise), and never touches a `Transport`. `connection.rs`'s `Core` is the only place those intentions become bytes written through `Wire`/`Transport`. Because of this split, the session's expiry and handshake behavior can be tested with plain unit tests and no simulated transport, and the transport implementations stay small.
 
 ## 18. License
 
