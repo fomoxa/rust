@@ -35,8 +35,8 @@ fn too_large(error: &io::Error) -> bool {
 #[derive(Debug)]
 pub struct UdpTransport {
     socket: UdpSocket,
-    scratch: Vec<u8>,
     inbox: Vec<u8>,
+    inbox_len: usize,
     holding: bool,
     closed: bool,
 }
@@ -55,8 +55,8 @@ impl UdpTransport {
         socket.set_nonblocking(true)?;
         Ok(UdpTransport {
             socket,
-            scratch: vec![0; SCRATCH_LEN],
-            inbox: Vec::new(),
+            inbox: vec![0; SCRATCH_LEN],
+            inbox_len: 0,
             holding: false,
             closed: false,
         })
@@ -100,10 +100,9 @@ impl Transport for UdpTransport {
             if self.closed {
                 return RecvOutcome::Closed;
             }
-            match self.socket.recv(&mut self.scratch) {
+            match self.socket.recv(&mut self.inbox) {
                 Ok(count) => {
-                    self.inbox.clear();
-                    self.inbox.extend_from_slice(&self.scratch[..count]);
+                    self.inbox_len = count;
                     self.holding = true;
                 }
                 Err(error) if retryable(&error) => return RecvOutcome::WouldBlock,
@@ -113,12 +112,12 @@ impl Transport for UdpTransport {
                 }
             }
         }
-        if self.inbox.len() > buffer.len() {
-            return RecvOutcome::NeedCapacity(self.inbox.len());
+        if self.inbox_len > buffer.len() {
+            return RecvOutcome::NeedCapacity(self.inbox_len);
         }
-        buffer[..self.inbox.len()].copy_from_slice(&self.inbox);
+        buffer[..self.inbox_len].copy_from_slice(&self.inbox[..self.inbox_len]);
         self.holding = false;
-        RecvOutcome::Received(self.inbox.len())
+        RecvOutcome::Received(self.inbox_len)
     }
 
     fn close_soft(&mut self) {}
@@ -127,7 +126,7 @@ impl Transport for UdpTransport {
         self.closed = true;
         self.holding = false;
         self.inbox = Vec::new();
-        self.scratch = Vec::new();
+        self.inbox_len = 0;
     }
 }
 

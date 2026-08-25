@@ -113,6 +113,13 @@ impl<L: ServerTransport> Server<L> {
         self.listener.close();
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.sink.shrink_to_fit();
+        for peer in self.peers.iter_mut() {
+            peer.core.shrink();
+        }
+    }
+
     fn find(&self, peer: PeerId) -> Option<&Peer<L::Peer>> {
         self.peers.iter().find(|candidate| candidate.id == peer)
     }

@@ -164,6 +164,10 @@ impl StreamDecoder {
         self.buf.len() - self.start
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.buf.shrink_to_fit();
+    }
+
     pub fn is_poisoned(&self) -> bool {
         self.poisoned.is_some()
     }

@@ -198,6 +198,7 @@ pub(crate) struct Core<T: Transport> {
     intake: Intake,
     session: Session,
     recv_buf: Vec<u8>,
+    recv_base: usize,
     scratch: Vec<u8>,
     announced: bool,
 }
@@ -215,11 +216,13 @@ impl<T: Transport> Core<T> {
             TransportKind::Message => Intake::Message,
         };
         let (session, opening) = Session::new(role, schema, config, now);
+        let recv_base = config.recv_buffer_size.max(frame::DATA_HEADER_LEN);
         let mut core = Core {
             wire: Wire::new(transport),
             intake,
             session,
-            recv_buf: vec![0; config.recv_buffer_size.max(frame::DATA_HEADER_LEN)],
+            recv_buf: vec![0; recv_base],
+            recv_base,
             scratch: Vec::new(),
             announced: false,
         };
@@ -252,6 +255,17 @@ impl<T: Transport> Core<T> {
     pub(crate) fn close(&mut self) {
         self.session.close();
         self.wire.shutdown();
+    }
+
+    pub(crate) fn shrink(&mut self) {
+        if self.recv_buf.len() > self.recv_base {
+            self.recv_buf.truncate(self.recv_base);
+        }
+        self.recv_buf.shrink_to_fit();
+        self.scratch.shrink_to_fit();
+        if let Intake::Stream(decoder) = &mut self.intake {
+            decoder.shrink_to_fit();
+        }
     }
 
     pub(crate) fn send(&mut self, message_id: u32, payload: &[u8]) -> Result<(), SendError> {
@@ -498,5 +512,10 @@ impl<T: Transport> Connection<T> {
 
     pub fn close(&mut self) {
         self.core.close();
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.core.shrink();
+        self.sink.shrink_to_fit();
     }
 }

@@ -256,6 +256,71 @@ fn a_packet_that_does_not_fit_is_not_lost() {
 }
 
 #[test]
+fn shrinking_after_a_stream_burst_still_delivers_the_next_message() {
+    let fake = Fake::stream();
+    let now = Instant::now();
+    let mut connection = ready(&fake, Config::default(), now);
+
+    let big_payload = vec![7u8; 5000];
+    fake.deliver(&data_frame(1, &big_payload));
+    let received: Vec<u8> = connection
+        .tick(now)
+        .find_map(|event| match event {
+            Event::Message { payload, .. } => Some(payload.to_vec()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(received, big_payload);
+
+    connection.shrink_to_fit();
+
+    let small_payload = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+    fake.deliver(&data_frame(2, &small_payload));
+    let (id, received): (u32, Vec<u8>) = connection
+        .tick(now)
+        .find_map(|event| match event {
+            Event::Message { id, payload } => Some((id, payload.to_vec())),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(id, 2);
+    assert_eq!(received, small_payload);
+}
+
+#[test]
+fn shrinking_after_a_packet_burst_still_delivers_the_next_message() {
+    let fake = Fake::message();
+    let now = Instant::now();
+    let config = Config { recv_buffer_size: 16, ..Config::default() };
+    let mut connection = ready(&fake, config, now);
+
+    let big_payload = vec![7u8; 5000];
+    fake.deliver(&data_frame(1, &big_payload));
+    let received: Vec<u8> = connection
+        .tick(now)
+        .find_map(|event| match event {
+            Event::Message { payload, .. } => Some(payload.to_vec()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(received, big_payload);
+
+    connection.shrink_to_fit();
+
+    let small_payload = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+    fake.deliver(&data_frame(2, &small_payload));
+    let (id, received): (u32, Vec<u8>) = connection
+        .tick(now)
+        .find_map(|event| match event {
+            Event::Message { id, payload } => Some((id, payload.to_vec())),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(id, 2);
+    assert_eq!(received, small_payload);
+}
+
+#[test]
 fn a_flood_of_frames_stops_at_the_budget() {
     let fake = Fake::stream();
     let now = Instant::now();
