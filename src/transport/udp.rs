@@ -8,7 +8,9 @@ use crate::transport::{
     Accept, RecvOutcome, SendOutcome, ServerTransport, Transport, TransportKind,
 };
 
-pub const MAX_DATAGRAM: usize = 65_507;
+const HEADER_LEN: usize = 8;
+
+pub const MAX_DATAGRAM: usize = 65_507 - HEADER_LEN;
 
 const SCRATCH_LEN: usize = 65_535;
 const MAX_QUEUED_PER_PEER: usize = 64;
@@ -32,12 +34,45 @@ fn too_large(error: &io::Error) -> bool {
     error.raw_os_error() == Some(MESSAGE_TOO_LONG) || error.kind() == io::ErrorKind::InvalidInput
 }
 
+fn random_bits() -> u64 {
+    let mut bytes = [0u8; 8];
+    if fill_from_os(&mut bytes) {
+        return u64::from_le_bytes(bytes);
+    }
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u64(0x6f6d_6f66);
+    hasher.finish()
+}
+
+#[cfg(unix)]
+fn fill_from_os(bytes: &mut [u8]) -> bool {
+    use std::io::Read;
+    std::fs::File::open("/dev/urandom").and_then(|mut file| file.read_exact(bytes)).is_ok()
+}
+
+#[cfg(windows)]
+fn fill_from_os(bytes: &mut [u8]) -> bool {
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn SystemFunction036(buffer: *mut u8, length: u32) -> u8;
+    }
+    unsafe { SystemFunction036(bytes.as_mut_ptr(), bytes.len() as u32) != 0 }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn fill_from_os(_bytes: &mut [u8]) -> bool {
+    false
+}
+
 #[derive(Debug)]
 pub struct UdpTransport {
     socket: UdpSocket,
     inbox: Vec<u8>,
     inbox_len: usize,
     holding: bool,
+    session: u64,
     closed: bool,
 }
 
@@ -58,6 +93,7 @@ impl UdpTransport {
             inbox: vec![0; SCRATCH_LEN],
             inbox_len: 0,
             holding: false,
+            session: 0,
             closed: false,
         })
     }
@@ -83,8 +119,11 @@ impl Transport for UdpTransport {
         if bytes.len() > MAX_DATAGRAM {
             return SendOutcome::TooLarge;
         }
-        match self.socket.send(bytes) {
-            Ok(count) if count == bytes.len() => SendOutcome::Sent,
+        let mut datagram = Vec::with_capacity(HEADER_LEN + bytes.len());
+        datagram.extend_from_slice(&self.session.to_le_bytes());
+        datagram.extend_from_slice(bytes);
+        match self.socket.send(&datagram) {
+            Ok(count) if count == datagram.len() => SendOutcome::Sent,
             Ok(_) => SendOutcome::TooLarge,
             Err(error) if retryable(&error) => SendOutcome::WouldBlock,
             Err(error) if too_large(&error) => SendOutcome::TooLarge,
@@ -96,15 +135,23 @@ impl Transport for UdpTransport {
     }
 
     fn recv(&mut self, buffer: &mut [u8]) -> RecvOutcome {
-        if !self.holding {
+        while !self.holding {
             if self.closed {
                 return RecvOutcome::Closed;
             }
             match self.socket.recv(&mut self.inbox) {
-                Ok(count) => {
-                    self.inbox_len = count;
+                Ok(count) if count > HEADER_LEN => {
+                    let mut header = [0u8; HEADER_LEN];
+                    header.copy_from_slice(&self.inbox[..HEADER_LEN]);
+                    let received = u64::from_le_bytes(header);
+                    if received == 0 || (self.session != 0 && received != self.session) {
+                        continue;
+                    }
+                    self.session = received;
+                    self.inbox_len = count - HEADER_LEN;
                     self.holding = true;
                 }
+                Ok(_) => continue,
                 Err(error) if retryable(&error) => return RecvOutcome::WouldBlock,
                 Err(error) => {
                     self.closed = true;
@@ -115,7 +162,7 @@ impl Transport for UdpTransport {
         if self.inbox_len > buffer.len() {
             return RecvOutcome::NeedCapacity(self.inbox_len);
         }
-        buffer[..self.inbox_len].copy_from_slice(&self.inbox[..self.inbox_len]);
+        buffer[..self.inbox_len].copy_from_slice(&self.inbox[HEADER_LEN..HEADER_LEN + self.inbox_len]);
         self.holding = false;
         RecvOutcome::Received(self.inbox_len)
     }
@@ -131,39 +178,91 @@ impl Transport for UdpTransport {
 }
 
 #[derive(Debug)]
+struct Slot {
+    address: SocketAddr,
+    queue: VecDeque<Vec<u8>>,
+}
+
+impl Slot {
+    fn push(&mut self, frame: &[u8]) {
+        if self.queue.len() >= MAX_QUEUED_PER_PEER {
+            self.queue.pop_front();
+        }
+        self.queue.push_back(frame.to_vec());
+    }
+}
+
+#[derive(Debug)]
 struct Hub {
     socket: UdpSocket,
     scratch: Vec<u8>,
-    peers: HashMap<SocketAddr, VecDeque<Vec<u8>>>,
-    arrivals: VecDeque<SocketAddr>,
+    slots: HashMap<u64, Slot>,
+    by_address: HashMap<SocketAddr, u64>,
+    arrivals: VecDeque<u64>,
     closed: bool,
 }
 
 impl Hub {
+    fn new_session(&self) -> u64 {
+        loop {
+            let candidate = random_bits();
+            if candidate != 0 && !self.slots.contains_key(&candidate) {
+                return candidate;
+            }
+        }
+    }
+
     fn pump(&mut self) {
         if self.closed {
             return;
         }
-        let Hub { socket, scratch, peers, arrivals, .. } = self;
         for _ in 0..MAX_READS_PER_PUMP {
-            match socket.recv_from(scratch) {
-                Ok((count, address)) => {
-                    if !peers.contains_key(&address) {
-                        if peers.len() >= MAX_TRACKED_PEERS {
-                            continue;
-                        }
-                        peers.insert(address, VecDeque::new());
-                        arrivals.push_back(address);
-                    }
-                    let queue = peers.get_mut(&address).expect("just inserted");
-                    if queue.len() >= MAX_QUEUED_PER_PEER {
-                        queue.pop_front();
-                    }
-                    queue.push_back(scratch[..count].to_vec());
-                }
-                Err(error) if retryable(&error) => return,
+            let (count, address) = match self.socket.recv_from(&mut self.scratch) {
+                Ok(received) => received,
                 Err(_) => return,
+            };
+            if count <= HEADER_LEN {
+                continue;
             }
+            let mut header = [0u8; HEADER_LEN];
+            header.copy_from_slice(&self.scratch[..HEADER_LEN]);
+            let session = u64::from_le_bytes(header);
+            if session != 0 {
+                let Some(slot) = self.slots.get_mut(&session) else {
+                    continue;
+                };
+                if slot.address != address {
+                    if self.by_address.contains_key(&address) {
+                        continue;
+                    }
+                    self.by_address.remove(&slot.address);
+                    slot.address = address;
+                    self.by_address.insert(address, session);
+                }
+                slot.push(&self.scratch[HEADER_LEN..count]);
+                continue;
+            }
+            if let Some(known) = self.by_address.get(&address).copied() {
+                if let Some(slot) = self.slots.get_mut(&known) {
+                    slot.push(&self.scratch[HEADER_LEN..count]);
+                }
+                continue;
+            }
+            if self.slots.len() >= MAX_TRACKED_PEERS {
+                continue;
+            }
+            let created = self.new_session();
+            let mut slot = Slot { address, queue: VecDeque::new() };
+            slot.push(&self.scratch[HEADER_LEN..count]);
+            self.slots.insert(created, slot);
+            self.by_address.insert(address, created);
+            self.arrivals.push_back(created);
+        }
+    }
+
+    fn forget(&mut self, session: u64) {
+        if let Some(slot) = self.slots.remove(&session) {
+            self.by_address.remove(&slot.address);
         }
     }
 }
@@ -181,7 +280,8 @@ impl UdpServerTransport {
             hub: Rc::new(RefCell::new(Hub {
                 socket,
                 scratch: vec![0; SCRATCH_LEN],
-                peers: HashMap::new(),
+                slots: HashMap::new(),
+                by_address: HashMap::new(),
                 arrivals: VecDeque::new(),
                 closed: false,
             })),
@@ -200,9 +300,9 @@ impl ServerTransport for UdpServerTransport {
         let mut hub = self.hub.borrow_mut();
         hub.pump();
         match hub.arrivals.pop_front() {
-            Some(address) => Accept::Accepted(UdpPeerTransport {
+            Some(session) => Accept::Accepted(UdpPeerTransport {
                 hub: Rc::clone(&self.hub),
-                address,
+                session,
                 closed: false,
             }),
             None => Accept::Pending,
@@ -212,7 +312,8 @@ impl ServerTransport for UdpServerTransport {
     fn close(&mut self) {
         let mut hub = self.hub.borrow_mut();
         hub.closed = true;
-        hub.peers.clear();
+        hub.slots.clear();
+        hub.by_address.clear();
         hub.arrivals.clear();
     }
 }
@@ -220,13 +321,13 @@ impl ServerTransport for UdpServerTransport {
 #[derive(Debug)]
 pub struct UdpPeerTransport {
     hub: Rc<RefCell<Hub>>,
-    address: SocketAddr,
+    session: u64,
     closed: bool,
 }
 
 impl UdpPeerTransport {
-    pub fn address(&self) -> SocketAddr {
-        self.address
+    pub fn address(&self) -> Option<SocketAddr> {
+        self.hub.borrow().slots.get(&self.session).map(|slot| slot.address)
     }
 }
 
@@ -246,8 +347,14 @@ impl Transport for UdpPeerTransport {
         if hub.closed {
             return SendOutcome::Closed;
         }
-        match hub.socket.send_to(bytes, self.address) {
-            Ok(count) if count == bytes.len() => SendOutcome::Sent,
+        let Some(slot) = hub.slots.get(&self.session) else {
+            return SendOutcome::Closed;
+        };
+        let mut datagram = Vec::with_capacity(HEADER_LEN + bytes.len());
+        datagram.extend_from_slice(&self.session.to_le_bytes());
+        datagram.extend_from_slice(bytes);
+        match hub.socket.send_to(&datagram, slot.address) {
+            Ok(count) if count == datagram.len() => SendOutcome::Sent,
             Ok(_) => SendOutcome::TooLarge,
             Err(error) if retryable(&error) => SendOutcome::WouldBlock,
             Err(error) if too_large(&error) => SendOutcome::TooLarge,
@@ -261,10 +368,10 @@ impl Transport for UdpPeerTransport {
         }
         let mut hub = self.hub.borrow_mut();
         hub.pump();
-        let Some(queue) = hub.peers.get_mut(&self.address) else {
+        let Some(slot) = hub.slots.get_mut(&self.session) else {
             return RecvOutcome::Closed;
         };
-        let Some(datagram) = queue.front() else {
+        let Some(datagram) = slot.queue.front() else {
             return RecvOutcome::WouldBlock;
         };
         if datagram.len() > buffer.len() {
@@ -272,7 +379,7 @@ impl Transport for UdpPeerTransport {
         }
         buffer[..datagram.len()].copy_from_slice(datagram);
         let count = datagram.len();
-        queue.pop_front();
+        slot.queue.pop_front();
         RecvOutcome::Received(count)
     }
 
@@ -280,6 +387,6 @@ impl Transport for UdpPeerTransport {
 
     fn close_hard(&mut self) {
         self.closed = true;
-        self.hub.borrow_mut().peers.remove(&self.address);
+        self.hub.borrow_mut().forget(self.session);
     }
 }

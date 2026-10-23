@@ -418,7 +418,7 @@ A control frame produced while a data frame is already queued is appended behind
 | `TcpTransport` | `Stream` | Wraps a non-blocking `TcpStream`; `TCP_NODELAY` is enabled. |
 | `TcpListenerTransport` | (server) | Wraps a non-blocking `TcpListener`; each accepted connection becomes a `TcpTransport`. |
 | `UdpTransport` | `Message` | A connected, non-blocking `UdpSocket` for client use. |
-| `UdpServerTransport` / `UdpPeerTransport` | `Message` | A shared, non-blocking `UdpSocket` demultiplexed by source address; `UdpPeerTransport` is one peer's view of it. |
+| `UdpServerTransport` / `UdpPeerTransport` | `Message` | A shared, non-blocking `UdpSocket` demultiplexed by the session identifier at the start of each datagram (`implementation-guide/en/03-udp-transport.md`); `UdpPeerTransport` is one peer's view of it. |
 
 All four are implemented on `std::net` only. Internally, `UdpServerTransport` reads up to 256 datagrams from the socket per `accept()` call, tracks at most 4096 distinct peer addresses, and queues at most 64 pending datagrams per peer, dropping the oldest queued datagram for a peer once that queue is full. WebSocket, TLS, and QUIC transports are out of scope for this crate and need no change to it; they are written as separate crates against the `Transport` trait.
 
@@ -432,7 +432,7 @@ All four are implemented on `std::net` only. Internally, `UdpServerTransport` re
 | Messages declared in a hello | 1 000 000 | `handshake::MAX_MESSAGES`, checked before any multiplication so a hostile count cannot overflow |
 | Query rounds per session | 1 | enforced by `Session` |
 | Frames processed per tick | `max_frames_per_tick`, 64 by default | tick fairness; the remainder is processed on the next tick |
-| UDP datagram | 65 507 B | `transport::udp::MAX_DATAGRAM`; `send` returns `SendOutcome::TooLarge` above this |
+| UDP frame | 65 499 B | `transport::udp::MAX_DATAGRAM` (65 507 minus the 8-byte session identifier); `send` returns `SendOutcome::TooLarge` above this |
 
 ## 15. Testing
 
