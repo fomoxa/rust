@@ -38,7 +38,7 @@ A message payload is opaque to this crate: from the transport up to the event de
 
 ## 4. Installation
 
-`fomoxa-net` is published on crates.io at version 0.1.1.
+`fomoxa-net` is published on crates.io at version 0.1.2.
 
 ```sh
 cargo add fomoxa-net
@@ -48,7 +48,7 @@ or, equivalently:
 
 ```toml
 [dependencies]
-fomoxa-net = "0.1.1"
+fomoxa-net = "0.1.2"
 ```
 
 The crate declares no dependency that reaches a consumer. `fomoxa-attributes` is listed only under `[dev-dependencies]` in this repository's own `Cargo.toml`; it exists solely because `examples/demo/src/models/` is annotated source, and the `#[network]`/`#[codec]` attribute macros must resolve for `rustc` to accept it. `fomoxac` reads those attributes at code-generation time; they compile away to nothing at runtime, and none of it is part of the published crate's dependency graph.
