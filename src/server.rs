@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -19,13 +20,22 @@ pub struct Server<L: ServerTransport> {
     schema: Arc<Schema>,
     config: Config,
     peers: Vec<Peer<L::Peer>>,
+    positions: HashMap<PeerId, usize>,
     next_id: u64,
     sink: EventSink,
 }
 
 impl<L: ServerTransport> Server<L> {
     pub fn new(listener: L, schema: Arc<Schema>, config: Config) -> Server<L> {
-        Server { listener, schema, config, peers: Vec::new(), next_id: 1, sink: EventSink::new() }
+        Server {
+            listener,
+            schema,
+            config,
+            peers: Vec::new(),
+            positions: HashMap::new(),
+            next_id: 1,
+            sink: EventSink::new(),
+        }
     }
 
     pub fn listener(&self) -> &L {
@@ -57,7 +67,7 @@ impl<L: ServerTransport> Server<L> {
     }
 
     pub fn tick(&mut self, now: Instant) -> PeerEvents<'_> {
-        let Server { listener, schema, config, peers, next_id, sink } = self;
+        let Server { listener, schema, config, peers, positions, next_id, sink } = self;
         sink.clear();
 
         let mut room = config.max_frames_per_tick;
@@ -67,6 +77,7 @@ impl<L: ServerTransport> Server<L> {
                     let id = PeerId(*next_id);
                     *next_id += 1;
                     let core = Core::new(transport, schema.clone(), *config, Role::Server, now);
+                    positions.insert(id, peers.len());
                     peers.push(Peer { id, core });
                     room -= 1;
                 }
@@ -77,7 +88,12 @@ impl<L: ServerTransport> Server<L> {
         for peer in peers.iter_mut() {
             peer.core.tick(now, peer.id, sink);
         }
+        let before = peers.len();
         peers.retain(|peer| !peer.core.is_finished());
+        if peers.len() != before {
+            positions.clear();
+            positions.extend(peers.iter().enumerate().map(|(position, peer)| (peer.id, position)));
+        }
 
         sink.peer_events()
     }
@@ -110,6 +126,7 @@ impl<L: ServerTransport> Server<L> {
             peer.core.close();
         }
         self.peers.clear();
+        self.positions.clear();
         self.listener.close();
     }
 
@@ -121,10 +138,10 @@ impl<L: ServerTransport> Server<L> {
     }
 
     fn find(&self, peer: PeerId) -> Option<&Peer<L::Peer>> {
-        self.peers.iter().find(|candidate| candidate.id == peer)
+        self.positions.get(&peer).map(|&position| &self.peers[position])
     }
 
     fn find_mut(&mut self, peer: PeerId) -> Option<&mut Peer<L::Peer>> {
-        self.peers.iter_mut().find(|candidate| candidate.id == peer)
+        self.positions.get(&peer).map(|&position| &mut self.peers[position])
     }
 }

@@ -10,7 +10,7 @@ checksum = "25ebf071eccdd5586a3f8823dcd108a9441842883e275b9fa32b92e5fb2d144f"
 
 [[package]]
 name = "fomoxa-net"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "fomoxa-attributes",
 ]
