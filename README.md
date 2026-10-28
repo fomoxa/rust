@@ -38,7 +38,7 @@ A message payload is opaque to this crate: from the transport up to the event de
 
 ## 4. Installation
 
-`fomoxa-net` is published on crates.io at version 0.1.3.
+`fomoxa-net` is published on crates.io at version 0.1.4.
 
 ```sh
 cargo add fomoxa-net
@@ -48,7 +48,7 @@ or, equivalently:
 
 ```toml
 [dependencies]
-fomoxa-net = "0.1.3"
+fomoxa-net = "0.1.4"
 ```
 
 The crate declares no dependency that reaches a consumer. `fomoxa-attributes` is listed only under `[dev-dependencies]` in this repository's own `Cargo.toml`; it exists solely because `examples/demo/src/models/` is annotated source, and the `#[network]`/`#[codec]` attribute macros must resolve for `rustc` to accept it. `fomoxac` reads those attributes at code-generation time; they compile away to nothing at runtime, and none of it is part of the published crate's dependency graph.
@@ -415,8 +415,8 @@ A control frame produced while a data frame is already queued is appended behind
 
 | Transport | `TransportKind` | Notes |
 |---|---|---|
-| `TcpTransport` | `Stream` | Wraps a non-blocking `TcpStream`; `TCP_NODELAY` is enabled. |
-| `TcpListenerTransport` | (server) | Wraps a non-blocking `TcpListener`; each accepted connection becomes a `TcpTransport`. |
+| `TcpTransport` | `Stream` | Wraps a non-blocking `TcpStream`; `TCP_NODELAY` is enabled. `socket()` returns the stream so a caller can wait for readiness on it between ticks. |
+| `TcpListenerTransport` | (server) | Wraps a non-blocking `TcpListener`; each accepted connection becomes a `TcpTransport`. `socket()` returns the listener for the same purpose. |
 | `UdpTransport` | `Message` | A connected, non-blocking `UdpSocket` for client use. |
 | `UdpServerTransport` / `UdpPeerTransport` | `Message` | A shared, non-blocking `UdpSocket` demultiplexed by the session identifier at the start of each datagram (`implementation-guide/en/03-udp-transport.md`); `UdpPeerTransport` is one peer's view of it. |
 

@@ -33,6 +33,10 @@ impl TcpTransport {
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.socket.peer_addr()
     }
+
+    pub fn socket(&self) -> &TcpStream {
+        &self.socket
+    }
 }
 
 impl Transport for TcpTransport {
@@ -103,6 +107,10 @@ impl TcpListenerTransport {
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.listener.local_addr()
+    }
+
+    pub fn socket(&self) -> &TcpListener {
+        &self.listener
     }
 }
 
