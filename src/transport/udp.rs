@@ -162,7 +162,8 @@ impl Transport for UdpTransport {
         if self.inbox_len > buffer.len() {
             return RecvOutcome::NeedCapacity(self.inbox_len);
         }
-        buffer[..self.inbox_len].copy_from_slice(&self.inbox[HEADER_LEN..HEADER_LEN + self.inbox_len]);
+        buffer[..self.inbox_len]
+            .copy_from_slice(&self.inbox[HEADER_LEN..HEADER_LEN + self.inbox_len]);
         self.holding = false;
         RecvOutcome::Received(self.inbox_len)
     }
