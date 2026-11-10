@@ -171,6 +171,13 @@ impl Session {
         }
     }
 
+    pub(crate) fn note_activity(&mut self, now: Instant) {
+        if self.state != SessionState::Closed {
+            self.last_activity = now;
+            self.probe_sent = None;
+        }
+    }
+
     pub fn tick(&mut self, now: Instant) -> Reaction<'static> {
         if self.state == SessionState::Closed {
             return Reaction::idle();

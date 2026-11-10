@@ -38,7 +38,7 @@ A message payload is opaque to this crate: from the transport up to the event de
 
 ## 4. Installation
 
-`fomoxa-net` is published on crates.io at version 0.1.4.
+`fomoxa-net` is published on crates.io at version 0.1.5.
 
 ```sh
 cargo add fomoxa-net
@@ -48,7 +48,7 @@ or, equivalently:
 
 ```toml
 [dependencies]
-fomoxa-net = "0.1.4"
+fomoxa-net = "0.1.5"
 ```
 
 The crate declares no dependency that reaches a consumer. `fomoxa-attributes` is listed only under `[dev-dependencies]` in this repository's own `Cargo.toml`; it exists solely because `examples/demo/src/models/` is annotated source, and the `#[network]`/`#[codec]` attribute macros must resolve for `rustc` to accept it. `fomoxac` reads those attributes at code-generation time; they compile away to nothing at runtime, and none of it is part of the published crate's dependency graph.
@@ -203,6 +203,7 @@ Every byte the runtime places on a transport belongs to a frame, and every frame
 | 1 | PROBE | one byte, no body |
 | 2 | ACK | one byte, no body |
 | 3 | HANDSHAKE | 5-byte header, then an opaque payload |
+| 4 | HANDSHAKE PART | 9-byte header, then up to 891 bytes of a handshake payload; packet transports only |
 
 ### 9.1 Data frame
 
@@ -225,11 +226,24 @@ The message id is a message type, assigned by the schema, and not a sequence num
   +----+---------------+----------------------------+
 ```
 
+On a packet transport, a handshake payload whose HANDSHAKE frame would be longer than 900 bytes goes out as HANDSHAKE PART frames, one per packet (implementation guide §2.8); a hello splits from 63 messages on.
+
+```
+  +----+------------+------------+---------------+----------------------+
+  | 04 | part index | part count | part len      | part bytes           |
+  |    | 2B u16 LE  | 2B u16 LE  | 4B u32 LE     | = part len, <= 891   |
+  +----+------------+------------+---------------+----------------------+
+```
+
+Every part but the last carries exactly 891 bytes. The receiver places the parts by index, in any order, and reads the assembled payload as it reads the payload of one HANDSHAKE frame. A repeated part with the same bytes is ignored. The handshake fails as malformed (the server answers `Verdict::MalformedHello`, the client raises `HandshakeFailure::MalformedPeer`) when the part count is below 2 or above 1 177, an index is not below the count, a part other than the last does not carry exactly 891 bytes, the last part is empty, the count differs from that of the first part, a repeated part carries different bytes, the assembled payload is longer than 1 MiB, or a HANDSHAKE frame arrives while parts are missing. A part that arrives after the verdict is dropped and does not count as activity. A byte-stream transport sends every handshake payload as one HANDSHAKE frame, whatever its size, and a HANDSHAKE PART frame on a stream is a framing violation (`FrameError::UnknownType(4)`).
+
 ### 9.3 Framing on a stream and on a packet
 
 On a byte stream, frames sit back to back with no separator, and the decoder works incrementally, so it can be fed one byte at a time. A framing violation on a stream is fatal: there is no resynchronization point, so the decoder is left permanently unable to make progress and the session closes.
 
-On a packet transport, one packet holds exactly one frame; a short packet or a packet with bytes left over is invalid. A framing violation there is not fatal: that packet is dropped and the session continues, because a single datagram cannot corrupt shared parsing state the way a stream desync can. A stream shares one decode buffer across frames, and a packet is self-contained.
+On a packet transport, one packet holds exactly one frame; a short packet or a packet with bytes left over is invalid. A framing violation there is not fatal: that packet is dropped and the session continues, because a single datagram cannot corrupt shared parsing state the way a stream desync can. A stream shares one decode buffer across frames, and a packet is self-contained. A part that declares more than 891 bytes is such a violation and costs that packet.
+
+When a packet transport blocks, every frame that has to wait keeps its own packet, so a probe or an ack queued behind a message leaves as a separate datagram after it. Handshake parts wait the same way and do not count toward the outbound ceiling, because a payload of up to 1 MiB is queued as parts all at once.
 
 ## 10. The handshake
 
@@ -429,6 +443,8 @@ All four are implemented on `std::net` only. Internally, `UdpServerTransport` re
 | One message payload | 16 MiB | `frame::MAX_MESSAGE_PAYLOAD` |
 | One DATA frame | 16 MiB + 11 B | header plus payload cap |
 | One HANDSHAKE payload | 1 MiB | `frame::MAX_HANDSHAKE_PAYLOAD`, an allocation guard |
+| One HANDSHAKE PART frame | 900 B | `frame::PACKET_HANDSHAKE_BUDGET`; 891 bytes of payload after the 9-byte header (`frame::PART_CONTENT_LEN`) |
+| Parts of one handshake payload | 1 177 | `frame::MAX_HANDSHAKE_PARTS`, enough parts for 1 MiB |
 | Messages declared in a hello | 1 000 000 | `handshake::MAX_MESSAGES`, checked before any multiplication so a hostile count cannot overflow |
 | Query rounds per session | 1 | enforced by `Session` |
 | Frames processed per tick | `max_frames_per_tick`, 64 by default | tick fairness; the remainder is processed on the next tick |
@@ -438,15 +454,18 @@ All four are implemented on `std::net` only. Internally, `UdpServerTransport` re
 
 RFC-0003's conformance vectors test a codec, and the codec ships from `fomoxac`, so that suite runs there, against the generated code that ships, and is not repeated here.
 
-This repository's own suite tests the layer above the codec against the implementation guide. It has 72 `#[test]` functions across six files:
+This repository's own suite tests the layer above the codec against the implementation guide. It has 105 `#[test]` functions across nine files:
 
 | File | Test count | Covers |
 |---|---|---|
 | `tests/framing.rs` | 12 | Byte-for-byte frame layout, a stream fed one byte at a time, stream poisoning after a violation, and the size caps. |
 | `tests/handshake.rs` | 26 | All branches of the fingerprint comparison, both query-round outcomes, and malformed-payload handling. |
+| `tests/handshake_parts.rs` | 26 | The split at 63 messages, the part layout, parts of at most 900 bytes, a stream transport keeping one frame, assembly in reverse order and with a repeated part, each way a set of parts can fail the handshake, a part after the verdict, a part on a byte stream, a query round in parts, parts held by a blocked transport leaving as separate packets, a hello larger than the outbound ceiling, and a probe held behind a message leaving as its own packet. |
 | `tests/heartbeat.rs` | 11 | Probe suppression under traffic, a full expiry cycle without waiting on real time, and dead-peer declaration. |
 | `tests/runtime.rs` | 18 | Blocked transports, partial writes, `NeedCapacity`, `TooLarge` not closing the session, the per-tick frame budget, and exactly one terminal event per session. |
-| `tests/interop.rs` | 4 | Real TCP and UDP loopback sockets, both directions, including a handshake that needs the second (query) round. |
+| `tests/interop.rs` | 6 | Real TCP and UDP loopback sockets, both directions, including a handshake that needs the second (query) round and a 300-message handshake that crosses UDP in parts. |
+| `tests/tcp.rs` | 2 | The listener and stream sockets that `TcpListenerTransport` and `TcpTransport` expose. |
+| `tests/udp.rs` | 3 | Session identifiers on a shared UDP socket: a peer that changes address, datagrams that move nobody, and the first id a client keeps. |
 | `tests/demo.rs` | 1 | A `fomoxac`-generated codec carried over a real TCP socket, both directions, model in and model out. |
 
 Two of the `tests/handshake.rs` cases correspond to RFC-0003 §8.6: a peer that appended a field at the end of a message and a peer that dropped one from the end both connect, as vectors V-001 and V-002 require.
@@ -465,6 +484,7 @@ Reconnection is left to the application. A transport that reconnected on its own
 
 ```
 src/frame.rs        frame envelope, packet decode, incremental stream decoder
+src/assembler.rs    handshake parts put back together on a packet transport
 src/schema.rs       the schema table a handshake compares
 src/handshake.rs    hello, verdict, query, reply, and the server's decision
 src/session.rs      the transport-agnostic state machine and its clocks

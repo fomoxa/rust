@@ -22,12 +22,13 @@ Từ thấp lên cao (tầng dưới không biết gì về tầng trên):
 | Tầng | File | Vai trò |
 |---|---|---|
 | Transport | `src/transport/mod.rs`, `tcp.rs`, `udp.rs` | Trait `Transport` (một peer) và `ServerTransport` (một listener) — I/O thô, non-blocking, không biết gì về Fomoxa. TCP là `TransportKind::Stream` (byte liên tục, cần tự tách khung); UDP là `TransportKind::Message` (mỗi `recv` trả về đúng một datagram). |
-| Frame | `src/frame.rs` | Định dạng khung nhị phân: `Data`, `Probe`, `Ack`, `Handshake`. Cung cấp `encode_*`/`decode`/`decode_packet` thuần túy, và `StreamDecoder` để ghép các byte TCP rời rạc thành từng khung hoàn chỉnh. |
+| Frame | `src/frame.rs` | Định dạng khung nhị phân: `Data`, `Probe`, `Ack`, `Handshake`. Cung cấp `encode_*`/`decode`/`decode_packet` thuần túy, và `StreamDecoder` để ghép các byte TCP rời rạc thành từng khung hoàn chỉnh. Khung `04 HANDSHAKE PART` chỉ có trên transport gói: `encode_part`/`decode_part` nội bộ crate, không thêm biến thể vào `Frame`. |
+| Assembler | `src/assembler.rs` | Nội bộ crate. Ghép các part của một payload bắt tay theo chỉ số trên transport gói; trả `Pending`, `Complete` hoặc `Broken` theo luật §2.8 của implementation guide. |
 | Schema | `src/schema.rs` | `Schema`/`MessageSchema`: fingerprint của toàn schema và của từng message, cùng danh sách fingerprint tiền tố (`prefixes`) dùng để so khớp schema từng phần giữa hai phía. |
 | Handshake | `src/handshake.rs` | Giao thức bắt tay thuần túy (không I/O): mã hoá/giải mã `Hello`, `Verdict`, `Query`, `Reply`; hàm `decide()` so hai schema và quyết định Accept / Reject / Query thêm thông tin. |
 | Event | `src/event.rs` | Kiểu `Event` mà tầng ứng dụng nhận được (`Connected`, `Ready`, `Message`, `Probe`, `Ack`, `Disconnected`, `HandshakeFailed`), và `EventSink` — bộ đệm gộp nhiều event của nhiều peer trong một tick, dùng arena buffer để tránh cấp phát cho từng payload. |
 | Session | `src/session.rs` | Máy trạng thái thuần túy (`Handshaking → Ready → Closed`) cho **một** kết nối. Nhận vào một `Frame` hoặc một mốc thời gian (`tick`), trả ra `Reaction { out, event }` — hoàn toàn không đụng tới transport. |
-| Connection | `src/connection.rs` | Lớp keo nối `Session` với `Transport` thật: `Wire` (transport + hàng đợi gửi dở `Outbox` + trạng thái chết), `Core` (wire + bộ giải mã khung + session), và `Connection` — API công khai cho client (một peer). |
+| Connection | `src/connection.rs` | Lớp keo nối `Session` với `Transport` thật: `Wire` (transport + hàng đợi gửi dở: `Outbox` byte nối tiếp cho stream, hàng đợi gói `packets` mỗi khung một gói cho transport gói + trạng thái chết), `Core` (wire + bộ giải mã khung + session), và `Connection` — API công khai cho client (một peer). |
 | Server | `src/server.rs` | Quản lý nhiều `Peer` (mỗi peer là một `Core` dùng lại từ `connection.rs`) trên một `ServerTransport`. Chấp nhận kết nối mới mỗi tick, tick từng peer, dọn peer đã kết thúc. |
 
 ## Các tầng giao tiếp với nhau như thế nào
@@ -38,7 +39,9 @@ Không có thread nền, không có async — mọi thứ được thúc đẩy 
 **Chiều nhận (recv):**
 ```
 Transport::recv(buf)                              (bytes thô, non-blocking)
-   -> StreamDecoder (nếu TCP) ghép byte thành khung, hoặc decode_packet (nếu UDP)
+   -> StreamDecoder (nếu TCP) ghép byte thành khung, hoặc decode_packet (nếu UDP);
+      trên UDP, gói mở đầu bằng byte 04 đi qua decode_part rồi Assembler, đủ part
+      thì payload ghép được đưa vào như payload của một Frame::Handshake
    -> frame::decode trả về Frame<'_>
    -> Session::on_frame(frame, now) -> Reaction { out, event }
    -> Core: nếu có `out` thì frame::encode_* rồi Wire::send_control (gửi ngay)
@@ -50,7 +53,8 @@ Transport::recv(buf)                              (bytes thô, non-blocking)
 ```
 Connection::send(id, payload) / Server::send(peer, id, payload)
    -> Core::send: kiểm tra Session::is_ready(), frame::encode_data
-   -> Wire::send_message -> Transport::send (hoặc xếp vào Outbox nếu WouldBlock)
+   -> Wire::send_message -> Transport::send (hoặc xếp vào Outbox nếu WouldBlock;
+      trên UDP thì xếp vào hàng đợi gói)
 ```
 
 **Chiều thời gian (mỗi tick, không phụ thuộc I/O):**

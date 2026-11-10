@@ -135,6 +135,24 @@ fn udp_client_and_server_talk_both_ways() {
     assert_eq!(exchanged.client_notes.first(), Some(&Note::Connected));
 }
 
+fn large_schema() -> Arc<Schema> {
+    let messages: Vec<_> = (1..=300u32)
+        .map(|id| MessageSchema::new(id, u64::from(id) * 100, vec![u64::from(id) * 100]))
+        .collect();
+    Arc::new(Schema::new(0x0300_0300, messages).unwrap())
+}
+
+#[test]
+fn a_300_message_handshake_crosses_real_udp_in_parts() {
+    let listener = UdpServerTransport::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::new(listener, large_schema(), Config::default());
+    let transport = UdpTransport::connect(address).unwrap();
+    let client = Connection::new(transport, large_schema(), Config::default());
+
+    exchange(client, server);
+}
+
 #[test]
 fn a_schema_conflict_is_refused_over_a_real_socket() {
     let listener = TcpListenerTransport::bind("127.0.0.1:0").unwrap();

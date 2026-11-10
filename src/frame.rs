@@ -4,15 +4,22 @@ pub const TYPE_DATA: u8 = 0;
 pub const TYPE_PROBE: u8 = 1;
 pub const TYPE_ACK: u8 = 2;
 pub const TYPE_HANDSHAKE: u8 = 3;
+pub const TYPE_HANDSHAKE_PART: u8 = 4;
 
 pub const MAGIC: [u8; 2] = [0x43, 0x59];
 
 pub const DATA_HEADER_LEN: usize = 11;
 pub const HANDSHAKE_HEADER_LEN: usize = 5;
+pub const PART_HEADER_LEN: usize = 9;
 
 pub const MAX_MESSAGE_PAYLOAD: usize = 16 * 1024 * 1024;
 pub const MAX_HANDSHAKE_PAYLOAD: usize = 1024 * 1024;
 pub const MAX_FRAME_LEN: usize = DATA_HEADER_LEN + MAX_MESSAGE_PAYLOAD;
+
+pub const PACKET_HANDSHAKE_BUDGET: usize = 900;
+pub const PART_CONTENT_LEN: usize = PACKET_HANDSHAKE_BUDGET - PART_HEADER_LEN;
+pub const MAX_HANDSHAKE_PARTS: usize =
+    (MAX_HANDSHAKE_PAYLOAD + PART_CONTENT_LEN - 1) / PART_CONTENT_LEN;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Frame<'a> {
@@ -35,7 +42,10 @@ pub enum FrameError {
 impl fmt::Display for FrameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            FrameError::UnknownType(byte) => write!(f, "frame type 0x{byte:02X} is not 0..=3"),
+            FrameError::UnknownType(TYPE_HANDSHAKE_PART) => {
+                f.write_str("a handshake part (0x04) is only valid on a packet transport")
+            }
+            FrameError::UnknownType(byte) => write!(f, "frame type 0x{byte:02X} is not 0..=4"),
             FrameError::BadMagic(magic) => {
                 write!(f, "data frame magic {:02X?} is not 'C' 'Y'", magic)
             }
@@ -55,8 +65,50 @@ impl fmt::Display for FrameError {
 
 impl std::error::Error for FrameError {}
 
+fn read_u16(bytes: &[u8]) -> u16 {
+    u16::from_le_bytes([bytes[0], bytes[1]])
+}
+
 fn read_u32(bytes: &[u8]) -> u32 {
     u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Part<'a> {
+    pub(crate) index: usize,
+    pub(crate) count: usize,
+    pub(crate) bytes: &'a [u8],
+}
+
+pub(crate) fn decode_part(bytes: &[u8]) -> Result<Part<'_>, FrameError> {
+    if bytes.len() < PART_HEADER_LEN {
+        return Err(FrameError::Truncated);
+    }
+    let length = u64::from(read_u32(&bytes[5..9]));
+    if length > PART_CONTENT_LEN as u64 {
+        return Err(FrameError::HandshakeTooLarge(length));
+    }
+    let total = PART_HEADER_LEN + length as usize;
+    if bytes.len() < total {
+        return Err(FrameError::Truncated);
+    }
+    if bytes.len() > total {
+        return Err(FrameError::Trailing(bytes.len() - total));
+    }
+    Ok(Part {
+        index: usize::from(read_u16(&bytes[1..3])),
+        count: usize::from(read_u16(&bytes[3..5])),
+        bytes: &bytes[PART_HEADER_LEN..],
+    })
+}
+
+pub(crate) fn encode_part(index: usize, count: usize, content: &[u8], out: &mut Vec<u8>) {
+    out.reserve(PART_HEADER_LEN + content.len());
+    out.push(TYPE_HANDSHAKE_PART);
+    out.extend_from_slice(&(index as u16).to_le_bytes());
+    out.extend_from_slice(&(count as u16).to_le_bytes());
+    out.extend_from_slice(&(content.len() as u32).to_le_bytes());
+    out.extend_from_slice(content);
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Option<(Frame<'_>, usize)>, FrameError> {

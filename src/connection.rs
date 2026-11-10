@@ -1,9 +1,11 @@
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::assembler::{Assembler, Assembly};
 use crate::event::{Disconnect, Event, EventSink, Events, PeerId};
-use crate::frame::{self, StreamDecoder};
+use crate::frame::{self, Frame, Part, StreamDecoder};
 use crate::schema::Schema;
 use crate::session::{Config, Out, Reaction, Role, Session, SessionState};
 use crate::transport::{RecvOutcome, SendOutcome, Transport, TransportKind};
@@ -41,17 +43,42 @@ struct Outbox {
     offset: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hold {
+    Message,
+    Control,
+    Part,
+}
+
+#[derive(Debug)]
+struct Packet {
+    bytes: Vec<u8>,
+    counted: bool,
+}
+
 #[derive(Debug)]
 struct Wire<T: Transport> {
     transport: T,
+    packet: bool,
     outbox: Option<Outbox>,
+    packets: VecDeque<Packet>,
+    packet_bytes: usize,
     dead: Option<Disconnect>,
     released: bool,
 }
 
 impl<T: Transport> Wire<T> {
     fn new(transport: T) -> Wire<T> {
-        Wire { transport, outbox: None, dead: None, released: false }
+        let packet = transport.kind() == TransportKind::Message;
+        Wire {
+            transport,
+            packet,
+            outbox: None,
+            packets: VecDeque::new(),
+            packet_bytes: 0,
+            dead: None,
+            released: false,
+        }
     }
 
     fn is_dead(&self) -> bool {
@@ -59,7 +86,7 @@ impl<T: Transport> Wire<T> {
     }
 
     fn is_congested(&self) -> bool {
-        self.outbox.is_some()
+        self.outbox.is_some() || !self.packets.is_empty()
     }
 
     fn kill(&mut self, reason: Disconnect) {
@@ -73,6 +100,8 @@ impl<T: Transport> Wire<T> {
             self.dead = Some(Disconnect::Local);
         }
         self.outbox = None;
+        self.packets.clear();
+        self.packet_bytes = 0;
         self.transport.close_soft();
     }
 
@@ -88,6 +117,10 @@ impl<T: Transport> Wire<T> {
     }
 
     fn flush(&mut self) {
+        if self.packet {
+            self.flush_packets();
+            return;
+        }
         let Wire { transport, outbox, dead, .. } = self;
         loop {
             let Some(pending) = outbox.as_mut() else { return };
@@ -118,6 +151,66 @@ impl<T: Transport> Wire<T> {
                     }
                     return;
                 }
+            }
+        }
+    }
+
+    fn flush_packets(&mut self) {
+        while let Some(head) = self.packets.front() {
+            match self.transport.send(&head.bytes) {
+                SendOutcome::Sent | SendOutcome::TooLarge => self.pop_packet(),
+                SendOutcome::WouldBlock => return,
+                SendOutcome::Closed => {
+                    self.kill(Disconnect::PeerClosed);
+                    return;
+                }
+                SendOutcome::Partial(_) | SendOutcome::Error(_) => {
+                    self.kill(Disconnect::TransportError);
+                    return;
+                }
+            }
+        }
+    }
+
+    fn pop_packet(&mut self) {
+        if let Some(sent) = self.packets.pop_front() {
+            if sent.counted {
+                self.packet_bytes -= sent.bytes.len();
+            }
+        }
+    }
+
+    fn hold(&mut self, bytes: &[u8], hold: Hold) {
+        if hold == Hold::Control && self.packet_bytes + bytes.len() > MAX_OUTBOX_BYTES {
+            self.kill(Disconnect::Unresponsive);
+            return;
+        }
+        let counted = hold != Hold::Part;
+        if counted {
+            self.packet_bytes += bytes.len();
+        }
+        self.packets.push_back(Packet { bytes: bytes.to_vec(), counted });
+    }
+
+    fn send_packet(&mut self, bytes: &[u8], hold: Hold) -> Result<(), SendError> {
+        if !self.packets.is_empty() {
+            self.hold(bytes, hold);
+            return Ok(());
+        }
+        match self.transport.send(bytes) {
+            SendOutcome::Sent => Ok(()),
+            SendOutcome::WouldBlock => {
+                self.hold(bytes, hold);
+                Ok(())
+            }
+            SendOutcome::TooLarge => Err(SendError::TooLarge),
+            SendOutcome::Closed => {
+                self.kill(Disconnect::PeerClosed);
+                Err(SendError::Closed)
+            }
+            SendOutcome::Partial(_) | SendOutcome::Error(_) => {
+                self.kill(Disconnect::TransportError);
+                Err(SendError::Closed)
             }
         }
     }
@@ -153,11 +246,24 @@ impl<T: Transport> Wire<T> {
         if self.is_congested() {
             return Err(SendError::Congested);
         }
+        if self.packet {
+            return self.send_packet(bytes, Hold::Message);
+        }
         self.write(bytes)
+    }
+
+    fn send_part(&mut self, bytes: &[u8]) {
+        if !self.is_dead() {
+            let _ = self.send_packet(bytes, Hold::Part);
+        }
     }
 
     fn send_control(&mut self, bytes: &[u8]) {
         if self.is_dead() {
+            return;
+        }
+        if self.packet {
+            let _ = self.send_packet(bytes, Hold::Control);
             return;
         }
         if let Some(pending) = self.outbox.as_mut() {
@@ -200,6 +306,7 @@ pub(crate) struct Core<T: Transport> {
     recv_buf: Vec<u8>,
     recv_base: usize,
     scratch: Vec<u8>,
+    parts: Assembler,
     announced: bool,
 }
 
@@ -224,6 +331,7 @@ impl<T: Transport> Core<T> {
             recv_buf: vec![0; recv_base],
             recv_base,
             scratch: Vec::new(),
+            parts: Assembler::default(),
             announced: false,
         };
         if let Some(out) = opening {
@@ -263,6 +371,7 @@ impl<T: Transport> Core<T> {
         }
         self.recv_buf.shrink_to_fit();
         self.scratch.shrink_to_fit();
+        self.parts.shrink();
         if let Intake::Stream(decoder) = &mut self.intake {
             decoder.shrink_to_fit();
         }
@@ -323,9 +432,25 @@ impl<T: Transport> Core<T> {
                 if frame::encode_handshake(payload, &mut self.scratch).is_err() {
                     return;
                 }
+                if self.wire.packet && self.scratch.len() > frame::PACKET_HANDSHAKE_BUDGET {
+                    self.emit_parts(payload);
+                    return;
+                }
             }
         }
         self.wire.send_control(&self.scratch);
+    }
+
+    fn emit_parts(&mut self, payload: &[u8]) {
+        let count = (payload.len() + frame::PART_CONTENT_LEN - 1) / frame::PART_CONTENT_LEN;
+        for (index, content) in payload.chunks(frame::PART_CONTENT_LEN).enumerate() {
+            if self.wire.is_dead() {
+                return;
+            }
+            self.scratch.clear();
+            frame::encode_part(index, count, content, &mut self.scratch);
+            self.wire.send_part(&self.scratch);
+        }
     }
 
     fn drain(&mut self, now: Instant, peer: PeerId, sink: &mut EventSink) {
@@ -333,12 +458,14 @@ impl<T: Transport> Core<T> {
         let mut reads = frames;
         while frames > 0 && reads > 0 && !self.wire.is_dead() {
             let pump = {
-                let Core { wire, intake, session, recv_buf, .. } = self;
+                let Core { wire, intake, session, recv_buf, parts, .. } = self;
                 match intake {
                     Intake::Stream(decoder) => {
                         pump_stream(wire, decoder, session, recv_buf, sink, peer, now)
                     }
-                    Intake::Message => pump_message(wire, session, recv_buf, sink, peer, now),
+                    Intake::Message => {
+                        pump_message(wire, session, parts, recv_buf, sink, peer, now)
+                    }
                 }
             };
             match pump {
@@ -416,9 +543,50 @@ fn pump_stream<T: Transport>(
     }
 }
 
+fn deliver(reaction: Reaction<'_>, sink: &mut EventSink, peer: PeerId) -> Pump {
+    let Reaction { out, event } = reaction;
+    let mut failed = false;
+    if let Some(event) = event {
+        failed = matches!(event, Event::HandshakeFailed(_));
+        sink.push(peer, event);
+    }
+    Pump::Handled { out, failed }
+}
+
+const DROPPED: Pump = Pump::Handled { out: None, failed: false };
+
+fn handle_part(
+    parts: &mut Assembler,
+    part: Part<'_>,
+    session: &mut Session,
+    sink: &mut EventSink,
+    peer: PeerId,
+    now: Instant,
+) -> Pump {
+    if session.state() != SessionState::Handshaking {
+        return DROPPED;
+    }
+    match parts.add(part) {
+        Assembly::Pending => {
+            session.note_activity(now);
+            DROPPED
+        }
+        Assembly::Complete => {
+            let pump = deliver(session.on_frame(Frame::Handshake(parts.body()), now), sink, peer);
+            parts.reset();
+            pump
+        }
+        Assembly::Broken => {
+            parts.reset();
+            deliver(session.on_frame(Frame::Handshake(&[]), now), sink, peer)
+        }
+    }
+}
+
 fn pump_message<T: Transport>(
     wire: &mut Wire<T>,
     session: &mut Session,
+    parts: &mut Assembler,
     recv_buf: &mut Vec<u8>,
     sink: &mut EventSink,
     peer: PeerId,
@@ -426,16 +594,21 @@ fn pump_message<T: Transport>(
 ) -> Pump {
     match wire.recv(recv_buf) {
         RecvOutcome::Received(count) => {
-            let Ok(frame) = frame::decode_packet(&recv_buf[..count]) else {
-                return Pump::Handled { out: None, failed: false };
-            };
-            let Reaction { out, event } = session.on_frame(frame, now);
-            let mut failed = false;
-            if let Some(event) = event {
-                failed = matches!(event, Event::HandshakeFailed(_));
-                sink.push(peer, event);
+            let bytes = &recv_buf[..count];
+            if bytes.first() == Some(&frame::TYPE_HANDSHAKE_PART) {
+                let Ok(part) = frame::decode_part(bytes) else {
+                    return DROPPED;
+                };
+                return handle_part(parts, part, session, sink, peer, now);
             }
-            Pump::Handled { out, failed }
+            let Ok(frame) = frame::decode_packet(bytes) else {
+                return DROPPED;
+            };
+            if matches!(frame, Frame::Handshake(_)) && parts.is_pending() {
+                parts.reset();
+                return deliver(session.on_frame(Frame::Handshake(&[]), now), sink, peer);
+            }
+            deliver(session.on_frame(frame, now), sink, peer)
         }
         RecvOutcome::WouldBlock => Pump::Idle,
         RecvOutcome::NeedCapacity(needed) => {
