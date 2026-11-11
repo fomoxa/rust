@@ -3,9 +3,9 @@
 // source: src/models/game.rs
 // model: PlayerInput
 // codec: input
-// fingerprint: sha256:9b57ff586837d6541abe689c04bce84075d2e2d29b10113c8376b1db5e82fb25
-// fomoxac-version: 0.2.0
-// generated-at: 2026-08-20T13:07:51Z
+// fingerprint: sha256:0a2dc2c0a2f0630eb4e8944bd6e084fe4f33ed022128ea371f625027b996e2d8
+// fomoxac-version: 0.2.3
+// generated-at: 2026-11-11T02:08:52Z
 
 #![allow(dead_code, unused_imports)]
 
@@ -28,11 +28,11 @@ impl PlayerInputInputCodec {
     pub const MESSAGE_NAME: &'static str = "PlayerInput.input";
 
     /// This message's stable id, derived from its name alone.
-    pub const MESSAGE_ID: u32 = 0x74FDFA74;
+    pub const MESSAGE_ID: u32 = 0xA3177FFC;
 
     /// This message's wire-contract fingerprint - the same value
     /// `handshake.rs` publishes, and the one a peer compares against.
-    pub const FINGERPRINT: u64 = 0x9B57FF586837D654;
+    pub const FINGERPRINT: u64 = 0x0A2DC2C0A2F0630E;
 
     /// Writes the `input` fields of `value`, in declaration order.
     pub fn encode(writer: &mut Writer, value: &PlayerInput) {

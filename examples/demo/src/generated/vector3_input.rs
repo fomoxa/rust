@@ -3,9 +3,9 @@
 // source: src/models/game.rs
 // model: Vector3
 // codec: input
-// fingerprint: sha256:b6f55f6b96e4c39d87c6c1afcc003d4ba19c7ac41a1b44ce31a63235a102edd4
-// fomoxac-version: 0.2.0
-// generated-at: 2026-08-20T13:07:51Z
+// fingerprint: sha256:d8db83948ac10efe05fba3b62b874dc7bb9db392a50c88728d74210110440d96
+// fomoxac-version: 0.2.3
+// generated-at: 2026-11-11T02:08:52Z
 
 #![allow(dead_code, unused_imports)]
 
@@ -27,11 +27,11 @@ impl Vector3InputCodec {
     pub const MESSAGE_NAME: &'static str = "Vector3.input";
 
     /// This message's stable id, derived from its name alone.
-    pub const MESSAGE_ID: u32 = 0x6AA0B45C;
+    pub const MESSAGE_ID: u32 = 0x14A99787;
 
     /// This message's wire-contract fingerprint - the same value
     /// `handshake.rs` publishes, and the one a peer compares against.
-    pub const FINGERPRINT: u64 = 0xB6F55F6B96E4C39D;
+    pub const FINGERPRINT: u64 = 0xD8DB83948AC10EFE;
 
     /// Writes the `input` fields of `value`, in declaration order.
     pub fn encode(writer: &mut Writer, value: &Vector3) {

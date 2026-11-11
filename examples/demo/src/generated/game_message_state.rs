@@ -3,9 +3,9 @@
 // source: src/models/game.rs
 // model: GameMessage
 // codec: state
-// fingerprint: sha256:d0b26077fe6f6fd0cf8a587eb4c906cd1544c18767d9cd5cfeb485833132a12f
-// fomoxac-version: 0.2.0
-// generated-at: 2026-08-20T13:07:51Z
+// fingerprint: sha256:69961c52b532c9d9e02c8d08bd8eed4eaa99a42b2775629a30c945265c840a75
+// fomoxac-version: 0.2.3
+// generated-at: 2026-11-11T02:08:52Z
 
 #![allow(dead_code, unused_imports)]
 
@@ -30,11 +30,11 @@ impl GameMessageStateCodec {
     pub const MESSAGE_NAME: &'static str = "GameMessage.state";
 
     /// This message's stable id, derived from its name alone.
-    pub const MESSAGE_ID: u32 = 0xEB48C20E;
+    pub const MESSAGE_ID: u32 = 0xBC91316C;
 
     /// This message's wire-contract fingerprint - the same value
     /// `handshake.rs` publishes, and the one a peer compares against.
-    pub const FINGERPRINT: u64 = 0xD0B26077FE6F6FD0;
+    pub const FINGERPRINT: u64 = 0x69961C52B532C9D9;
 
     /// Writes the `state` fields of `value`, in declaration order.
     pub fn encode(writer: &mut Writer, value: &GameMessage) {
@@ -55,7 +55,7 @@ impl GameMessageStateCodec {
     /// the last field belong to a newer writer's model and are ignored.
     pub fn decode(reader: &mut Reader, value: &mut GameMessage) -> ::core::result::Result<(), DecodeError> {
         value.player_id = if reader.field_absent() { 0u32 } else { reader.read_u32()? };
-        value.player_name = if reader.field_absent() { ::std::string::String::new() } else { reader.read_string()? };
+        if reader.field_absent() { value.player_name.clear(); } else { reader.read_string_into(&mut value.player_name)?; }
         Vector3StateCodec::decode(reader, &mut value.position)?;
         value.health = if reader.field_absent() { 0u32 } else { reader.read_u32()? };
         value.is_alive = if reader.field_absent() { false } else { reader.read_bool()? };

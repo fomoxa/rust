@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "generator": "fomoxac 0.2.0",
-  "fingerprint": "sha256:bd60379718901aa552221e98151e823e4bc89f18db549e869d79efcc065bab34",
-  "fingerprint_u64": "0xBD60379718901AA5",
+  "generator": "fomoxac 0.2.3",
+  "fingerprint": "sha256:a1b9a690f9d9af8e87a2b1d0ca740ca004430324d43debc276fd7b905d034fea",
+  "fingerprint_u64": "0xA1B9A690F9D9AF8E",
   "models": {
     "GameMessage": {
       "source": "src/models/game.rs",
-      "fingerprint": "sha256:30a6a572f1717682e74d6dae0f0add57135119a73874c0e5ba043e2b94562dcb",
+      "fingerprint": "sha256:dbcd2f06d48f87275cca2869e644de74952a0315102be142edc21f935481e4b9",
       "codecs": [
         "state"
       ],
@@ -49,22 +49,22 @@
       ],
       "messages": {
         "state": {
-          "id": "0xEB48C20E",
-          "fingerprint": "sha256:d0b26077fe6f6fd0cf8a587eb4c906cd1544c18767d9cd5cfeb485833132a12f",
-          "fingerprint_u64": "0xD0B26077FE6F6FD0",
+          "id": "0xBC91316C",
+          "fingerprint": "sha256:69961c52b532c9d9e02c8d08bd8eed4eaa99a42b2775629a30c945265c840a75",
+          "fingerprint_u64": "0x69961C52B532C9D9",
           "prefixes": [
-            "sha256:38e57f1ede9363dc660d88b5d9345ae85b52e40ab33ba17629aacfc39fa5aa6a",
-            "sha256:586d8e8fafb7dbcd30201eb6601ebf48b912dd1853c71917adacca6cf161b2d8",
-            "sha256:83b41005793d70610ab1d55cb3566343acd326e50e4eb6d85a0ddae6bbbb96df",
-            "sha256:19ed6ca454a7f3ffaeedd3271b4e0a581cfdb32153e40ac79c2a32a0394b43f6",
-            "sha256:d0b26077fe6f6fd0cf8a587eb4c906cd1544c18767d9cd5cfeb485833132a12f"
+            "sha256:776f9da422206ec3d93f8fa72b30e671ea26a89be208afd67e3e2a2528f3eb0d",
+            "sha256:66e16bbd1b3e67188d39f764fc833275f4f953c40b572244812515fc15afe8c0",
+            "sha256:54f4f6986457d035de0f5a335ab2568d046c4b06d7b9fef91555e45abab537c7",
+            "sha256:b500fdc5b9f08d8c4a0ab9d4c165d8439ab36e75419fef2f1db51df9b2975284",
+            "sha256:69961c52b532c9d9e02c8d08bd8eed4eaa99a42b2775629a30c945265c840a75"
           ],
           "prefixes_u64": [
-            "0x38E57F1EDE9363DC",
-            "0x586D8E8FAFB7DBCD",
-            "0x83B41005793D7061",
-            "0x19ED6CA454A7F3FF",
-            "0xD0B26077FE6F6FD0"
+            "0x776F9DA422206EC3",
+            "0x66E16BBD1B3E6718",
+            "0x54F4F6986457D035",
+            "0xB500FDC5B9F08D8C",
+            "0x69961C52B532C9D9"
           ],
           "fields": [
             {
@@ -93,7 +93,7 @@
     },
     "PlayerInput": {
       "source": "src/models/game.rs",
-      "fingerprint": "sha256:6c6f3ae09e7b9a8a952993a9ab9764413703bb32e3ffafdda062abb0d8d926c4",
+      "fingerprint": "sha256:9640ba029a478c57c3e974ff8202f430d23db1a24aa47bcedc402dfb167dbd0e",
       "codecs": [
         "input"
       ],
@@ -122,18 +122,18 @@
       ],
       "messages": {
         "input": {
-          "id": "0x74FDFA74",
-          "fingerprint": "sha256:9b57ff586837d6541abe689c04bce84075d2e2d29b10113c8376b1db5e82fb25",
-          "fingerprint_u64": "0x9B57FF586837D654",
+          "id": "0xA3177FFC",
+          "fingerprint": "sha256:0a2dc2c0a2f0630eb4e8944bd6e084fe4f33ed022128ea371f625027b996e2d8",
+          "fingerprint_u64": "0x0A2DC2C0A2F0630E",
           "prefixes": [
-            "sha256:8398812e0ae8de2c86488faa8920b918006d0967ce058e54e09d8346e70f3c1c",
-            "sha256:2840a5c025e65fd37d0fe23a62464dfcf25d2b6e8ca979acf8495f654427544c",
-            "sha256:9b57ff586837d6541abe689c04bce84075d2e2d29b10113c8376b1db5e82fb25"
+            "sha256:10ad395d5ecb72375529a51f09a3c33de916a8cf456ac824de2a748ca79e9b68",
+            "sha256:a600afd363ad4b8b41f5edef7d022902189465c318577756245bd479c9d31510",
+            "sha256:0a2dc2c0a2f0630eb4e8944bd6e084fe4f33ed022128ea371f625027b996e2d8"
           ],
           "prefixes_u64": [
-            "0x8398812E0AE8DE2C",
-            "0x2840A5C025E65FD3",
-            "0x9B57FF586837D654"
+            "0x10AD395D5ECB7237",
+            "0xA600AFD363AD4B8B",
+            "0x0A2DC2C0A2F0630E"
           ],
           "fields": [
             {
@@ -154,7 +154,7 @@
     },
     "Vector3": {
       "source": "src/models/game.rs",
-      "fingerprint": "sha256:e6ef972a0e1fefbef956645d6921def39e592022f35fe8a58c9b935141520759",
+      "fingerprint": "sha256:fd25fca4a43946958854707e20754b4ae9ae5649400b3b805e8b5fbaf709bcf1",
       "codecs": [
         "state",
         "input"
@@ -187,18 +187,18 @@
       ],
       "messages": {
         "state": {
-          "id": "0xE128DBD8",
-          "fingerprint": "sha256:61a493617c048a9cc659546980235e83abefc13b17d7d00fcf10da8246e9a3dd",
-          "fingerprint_u64": "0x61A493617C048A9C",
+          "id": "0x1EA25BC6",
+          "fingerprint": "sha256:2c72dc3072bc93dc0a8d465d6fa1a85e9cda0462239b79f35659241717d0726e",
+          "fingerprint_u64": "0x2C72DC3072BC93DC",
           "prefixes": [
-            "sha256:445cdc98f7d0c93592133fbe0b3c52e7c55622563558dcda8f1e7e9c37bc04fb",
-            "sha256:0051244fd0f366d5e35a5258d047a2ae4fcfa7cb238c060ee4fa37bbda5c34f5",
-            "sha256:61a493617c048a9cc659546980235e83abefc13b17d7d00fcf10da8246e9a3dd"
+            "sha256:b3d897dbb7448f27f1e8ba51a541b32a7ce92ce0de1171de29d8fe1729f9e4e8",
+            "sha256:8ae566267aa2e2edb3869b114ca4de0d36e33655adc0a81be6c71ab1eda4dda3",
+            "sha256:2c72dc3072bc93dc0a8d465d6fa1a85e9cda0462239b79f35659241717d0726e"
           ],
           "prefixes_u64": [
-            "0x445CDC98F7D0C935",
-            "0x0051244FD0F366D5",
-            "0x61A493617C048A9C"
+            "0xB3D897DBB7448F27",
+            "0x8AE566267AA2E2ED",
+            "0x2C72DC3072BC93DC"
           ],
           "fields": [
             {
@@ -216,18 +216,18 @@
           ]
         },
         "input": {
-          "id": "0x6AA0B45C",
-          "fingerprint": "sha256:b6f55f6b96e4c39d87c6c1afcc003d4ba19c7ac41a1b44ce31a63235a102edd4",
-          "fingerprint_u64": "0xB6F55F6B96E4C39D",
+          "id": "0x14A99787",
+          "fingerprint": "sha256:d8db83948ac10efe05fba3b62b874dc7bb9db392a50c88728d74210110440d96",
+          "fingerprint_u64": "0xD8DB83948AC10EFE",
           "prefixes": [
-            "sha256:d7316ca3587095df943774282243df9a54fd3c43574680f7566df597a0de9aaa",
-            "sha256:faecc9ce83d332a8613f3df4f45c8327898bed3c90d57bae94763cc06a6d1dac",
-            "sha256:b6f55f6b96e4c39d87c6c1afcc003d4ba19c7ac41a1b44ce31a63235a102edd4"
+            "sha256:64542bc7e47c44b4867954e488bbdc535b4d4e3ec2a19a5d3b9d82d1cc0dd089",
+            "sha256:57b002c71781d493bd2236829f0eceb019985d9740563f18d75df9c7ee2ff4a4",
+            "sha256:d8db83948ac10efe05fba3b62b874dc7bb9db392a50c88728d74210110440d96"
           ],
           "prefixes_u64": [
-            "0xD7316CA3587095DF",
-            "0xFAECC9CE83D332A8",
-            "0xB6F55F6B96E4C39D"
+            "0x64542BC7E47C44B4",
+            "0x57B002C71781D493",
+            "0xD8DB83948AC10EFE"
           ],
           "fields": [
             {

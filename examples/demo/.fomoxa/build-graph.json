@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generator": "fomoxac 0.2.0",
-  "schema_fingerprint": "sha256:bd60379718901aa552221e98151e823e4bc89f18db549e869d79efcc065bab34",
+  "generator": "fomoxac 0.2.3",
+  "schema_fingerprint": "sha256:a1b9a690f9d9af8e87a2b1d0ca740ca004430324d43debc276fd7b905d034fea",
   "sha256_of": "each file with its `// generated-at:` line emptied, so an unchanged schema keeps an unchanged digest",
   "sources": {
     "src/models/game.rs": {
@@ -15,29 +15,29 @@
           "path": "src/generated/game_message_state.rs",
           "model": "GameMessage",
           "codec": "state",
-          "fingerprint": "sha256:d0b26077fe6f6fd0cf8a587eb4c906cd1544c18767d9cd5cfeb485833132a12f",
-          "sha256": "14bc63d23ad56671b6e62d3e350f17f7755f3e2cdfc2e86994742addf36f0997"
+          "fingerprint": "sha256:69961c52b532c9d9e02c8d08bd8eed4eaa99a42b2775629a30c945265c840a75",
+          "sha256": "5b0eb28ef8f68aae9ec85c3b8883824236beb501981778b0971d80713f88bb99"
         },
         {
           "path": "src/generated/player_input_input.rs",
           "model": "PlayerInput",
           "codec": "input",
-          "fingerprint": "sha256:9b57ff586837d6541abe689c04bce84075d2e2d29b10113c8376b1db5e82fb25",
-          "sha256": "f01fe5f449e0e42196ff7e2e65c3a22e84159362fb6c1ffe75c992e0cf89edd1"
+          "fingerprint": "sha256:0a2dc2c0a2f0630eb4e8944bd6e084fe4f33ed022128ea371f625027b996e2d8",
+          "sha256": "44cf33952c1661314bd1fe256021a64508a82473eb284e8922ba936e9fce4f05"
         },
         {
           "path": "src/generated/vector3_state.rs",
           "model": "Vector3",
           "codec": "state",
-          "fingerprint": "sha256:61a493617c048a9cc659546980235e83abefc13b17d7d00fcf10da8246e9a3dd",
-          "sha256": "d23239210d2e255a9d03d7f59a08ea9d46cc3cd7311b4bec74be2dc2d7259c37"
+          "fingerprint": "sha256:2c72dc3072bc93dc0a8d465d6fa1a85e9cda0462239b79f35659241717d0726e",
+          "sha256": "c3dfa2b909b818d7aafc15b561985af68c79bc28d1ade394332def3c6b0cee7e"
         },
         {
           "path": "src/generated/vector3_input.rs",
           "model": "Vector3",
           "codec": "input",
-          "fingerprint": "sha256:b6f55f6b96e4c39d87c6c1afcc003d4ba19c7ac41a1b44ce31a63235a102edd4",
-          "sha256": "ae98dcab2203d97e20e346aa47e3fab15f3715c7d437a01e6892e4211e1b56d0"
+          "fingerprint": "sha256:d8db83948ac10efe05fba3b62b874dc7bb9db392a50c88728d74210110440d96",
+          "sha256": "5279a0f3aedc4fd0030cc090e1f919595199883a3d55e4e895b9624faf9bbfc7"
         }
       ]
     }
@@ -46,17 +46,17 @@
     {
       "path": "src/generated/runtime.rs",
       "kind": "runtime",
-      "sha256": "e1965ba97600585343bfa3278430e4222999747ee9705ed6e9cb10bcb0a9871f"
+      "sha256": "7912a0ef49061dbc119c67a136dc500180aa1bb6711ef22e6abab89f7d3acd55"
     },
     {
       "path": "src/generated/handshake.rs",
       "kind": "handshake",
-      "sha256": "60ec1d875b31976916d21957f4ae5b95ee422a8c3409203e2cc9a833ded2b053"
+      "sha256": "bf781c344191048502b519e21ca07baeea10990c4ba5d729d6ab79b941395c64"
     },
     {
       "path": "src/generated/mod.rs",
       "kind": "root",
-      "sha256": "e18aac16ac448eaa4e575f5d279d0779ab092e605bd0b70a3b1425aae2109e7c"
+      "sha256": "0c352a6acfdfd68b554197abdefb94e63257691c6bffad4f7abd02ff4f4eacad"
     }
   ]
 }
