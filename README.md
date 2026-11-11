@@ -434,7 +434,7 @@ A control frame produced while a data frame is already queued is appended behind
 | `UdpTransport` | `Message` | A connected, non-blocking `UdpSocket` for client use. |
 | `UdpServerTransport` / `UdpPeerTransport` | `Message` | A shared, non-blocking `UdpSocket` demultiplexed by the session identifier at the start of each datagram (`implementation-guide/en/03-udp-transport.md`); `UdpPeerTransport` is one peer's view of it. |
 
-All four are implemented on `std::net` only. Internally, `UdpServerTransport` reads up to 256 datagrams from the socket per `accept()` call, tracks at most 4096 distinct peer addresses, and queues at most 64 pending datagrams per peer, dropping the oldest queued datagram for a peer once that queue is full. WebSocket, TLS, and QUIC transports are out of scope for this crate and need no change to it; they are written as separate crates against the `Transport` trait.
+All four are implemented on `std::net` only. Internally, `UdpServerTransport` reads up to 256 datagrams from the socket per `accept()` call, tracks at most 4096 distinct peer addresses, and queues at most 64 pending datagrams per peer, dropping the oldest queued datagram for a peer once that queue is full. A handshake body that arrives in more than 64 parts, which is a greeting of more than about 4,000 messages, can therefore lose its first parts when they come in together, and the handshake then expires (`implementation-guide/en/02-flows.md` §2.8). WebSocket, TLS, and QUIC transports are out of scope for this crate and need no change to it; they are written as separate crates against the `Transport` trait.
 
 ## 14. Limits
 
